@@ -1,11 +1,17 @@
 import os
+import sys
 import numpy as np
 import soundfile as sf
 import sounddevice as sd
 import threading
 import queue
 
-ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets')
+def get_base_dir():
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+ASSETS_DIR = os.path.join(get_base_dir(), 'assets')
 START_WAV = os.path.join(ASSETS_DIR, 'start.wav')
 STOP_WAV = os.path.join(ASSETS_DIR, 'stop.wav')
 SAMPLE_RATE = 44100

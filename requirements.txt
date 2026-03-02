@@ -10,3 +10,4 @@ Pillow
 requests
 python-dotenv
 uiautomation
+pyinstaller

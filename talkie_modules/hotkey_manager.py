@@ -27,6 +27,11 @@ class HotkeyManager:
         self.trigger_key: str = parts[-1].strip()
         self.modifiers: list[str] = [m.strip() for m in parts[:-1]]
 
+    @staticmethod
+    def _matches_key(event_name: str, key: str) -> bool:
+        """Check if event_name matches key, including left/right variants."""
+        return event_name in (key, f"left {key}", f"right {key}")
+
     def _on_key_event(self, event: keyboard.KeyboardEvent) -> None:
         all_mods_pressed: bool = all(
             keyboard.is_pressed(mod)
@@ -35,17 +40,17 @@ class HotkeyManager:
             for mod in self.modifiers
         ) if self.modifiers else True
 
-        if event.name == self.trigger_key:
+        if self._matches_key(event.name, self.trigger_key):
             if event.event_type == keyboard.KEY_DOWN:
                 if all_mods_pressed and not self.is_held:
                     self.is_held = True
-                    logger.debug("Hotkey pressed: %s", self.hotkey)
+                    logger.info("Hotkey pressed: %s", self.hotkey)
                     if self.on_press:
                         self.on_press()
             elif event.event_type == keyboard.KEY_UP:
                 if self.is_held:
                     self.is_held = False
-                    logger.debug("Hotkey released: %s", self.hotkey)
+                    logger.info("Hotkey released: %s", self.hotkey)
                     if self.on_release:
                         self.on_release()
 

@@ -1,0 +1,12 @@
+sounddevice
+soundfile
+numpy
+keyboard
+pyautogui
+pyperclip
+customtkinter
+pystray
+Pillow
+requests
+python-dotenv
+uiautomation

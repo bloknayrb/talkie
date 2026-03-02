@@ -15,6 +15,7 @@ PyInstaller.__main__.run([
     '--collect-all=sounddevice',
     '--collect-all=soundfile',
     '--collect-all=uiautomation',
+    '--collect-all=pystray',
     '--collect-submodules=talkie_modules',
     '--hidden-import=talkie_modules.api_client',
     '--hidden-import=talkie_modules.audio_io',
@@ -23,6 +24,5 @@ PyInstaller.__main__.run([
     '--hidden-import=talkie_modules.hotkey_manager',
     '--hidden-import=talkie_modules.settings_ui',
     '--hidden-import=talkie_modules.text_injector',
-    '--hidden-import=pystray._win32',
     '--clean'
 ])

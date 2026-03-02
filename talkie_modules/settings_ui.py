@@ -1,11 +1,18 @@
 """Settings UI for Talkie using CustomTkinter."""
 
 import json
-from typing import Any
+import threading
+from typing import Any, Optional
 
 import customtkinter as ctk
 
-from talkie_modules.config_manager import load_config, save_config
+from talkie_modules.config_manager import (
+    load_config,
+    save_config,
+    save_api_key,
+    get_api_key,
+    validate_api_key_format,
+)
 from talkie_modules.logger import get_logger
 
 logger = get_logger("settings")
@@ -16,12 +23,12 @@ class SettingsUI(ctk.CTk):
         super().__init__()
 
         self.title("Talkie Settings")
-        self.geometry("600x500")
+        self.geometry("600x550")
         ctk.set_appearance_mode("dark")
 
         self.config: dict[str, Any] = load_config()
 
-        self.tabview = ctk.CTkTabview(self, width=580, height=480)
+        self.tabview = ctk.CTkTabview(self, width=580, height=490)
         self.tabview.pack(padx=10, pady=10)
 
         self.tabview.add("API")
@@ -50,20 +57,98 @@ class SettingsUI(ctk.CTk):
         self.llm_provider.set(self.config.get("api_provider", "openai"))
         self.llm_provider.grid(row=1, column=1, padx=10, pady=5)
 
+        # API key entries — loaded from keyring
         ctk.CTkLabel(tab, text="OpenAI Key:").grid(row=2, column=0, padx=10, pady=5, sticky="w")
         self.openai_key = ctk.CTkEntry(tab, show="*", width=300)
-        self.openai_key.insert(0, self.config.get("openai_key", ""))
+        self.openai_key.insert(0, get_api_key("openai_key"))
         self.openai_key.grid(row=2, column=1, padx=10, pady=5)
 
         ctk.CTkLabel(tab, text="Groq Key:").grid(row=3, column=0, padx=10, pady=5, sticky="w")
         self.groq_key = ctk.CTkEntry(tab, show="*", width=300)
-        self.groq_key.insert(0, self.config.get("groq_key", ""))
+        self.groq_key.insert(0, get_api_key("groq_key"))
         self.groq_key.grid(row=3, column=1, padx=10, pady=5)
 
         ctk.CTkLabel(tab, text="Anthropic Key:").grid(row=4, column=0, padx=10, pady=5, sticky="w")
         self.anthropic_key = ctk.CTkEntry(tab, show="*", width=300)
-        self.anthropic_key.insert(0, self.config.get("anthropic_key", ""))
+        self.anthropic_key.insert(0, get_api_key("anthropic_key"))
         self.anthropic_key.grid(row=4, column=1, padx=10, pady=5)
+
+        # Test Connection button
+        self.test_button = ctk.CTkButton(tab, text="Test Connection", width=140, command=self._test_connection)
+        self.test_button.grid(row=5, column=1, padx=10, pady=10, sticky="w")
+
+        self.test_status = ctk.CTkLabel(tab, text="", text_color="gray")
+        self.test_status.grid(row=6, column=0, columnspan=2, padx=10, pady=2)
+
+    def _test_connection(self) -> None:
+        """Test the currently configured API connection in a background thread."""
+        self.test_button.configure(state="disabled", text="Testing...")
+        self.test_status.configure(text="", text_color="gray")
+        self.update()
+
+        provider = self.llm_provider.get()
+
+        # Map provider to key entry
+        key_map = {
+            "openai": self.openai_key,
+            "groq": self.groq_key,
+            "anthropic": self.anthropic_key,
+        }
+        key_entry = key_map.get(provider)
+        if not key_entry:
+            self._show_test_result(False, f"Unknown provider: {provider}")
+            return
+
+        api_key = key_entry.get()
+
+        # Format validation first
+        key_name = f"{provider}_key" if provider != "anthropic" else "anthropic_key"
+        if provider == "openai":
+            key_name = "openai_key"
+        elif provider == "groq":
+            key_name = "groq_key"
+
+        format_error = validate_api_key_format(key_name, api_key)
+        if format_error:
+            self._show_test_result(False, format_error)
+            return
+
+        def _run_test() -> None:
+            try:
+                if provider in ("openai", "groq"):
+                    import openai
+                    if provider == "openai":
+                        client = openai.OpenAI(api_key=api_key, timeout=10)
+                    else:
+                        client = openai.OpenAI(
+                            api_key=api_key,
+                            base_url="https://api.groq.com/openai/v1",
+                            timeout=10,
+                        )
+                    # Lightweight test — list models
+                    client.models.list()
+                    self.after(0, lambda: self._show_test_result(True, f"{provider} connection OK"))
+                elif provider == "anthropic":
+                    import anthropic
+                    client = anthropic.Anthropic(api_key=api_key, timeout=10)
+                    # Send a minimal message to verify auth
+                    client.messages.create(
+                        model="claude-haiku-4-5-20251001",
+                        max_tokens=1,
+                        messages=[{"role": "user", "content": "hi"}],
+                    )
+                    self.after(0, lambda: self._show_test_result(True, "Anthropic connection OK"))
+            except Exception as e:
+                error_msg = str(e)[:80]
+                self.after(0, lambda: self._show_test_result(False, error_msg))
+
+        threading.Thread(target=_run_test, daemon=True).start()
+
+    def _show_test_result(self, success: bool, message: str) -> None:
+        """Update the test status label on the main thread."""
+        color = "green" if success else "red"
+        self.test_status.configure(text=message, text_color=color)
+        self.test_button.configure(state="normal", text="Test Connection")
 
     def _setup_hotkey_tab(self) -> None:
         tab = self.tabview.tab("Hotkey")
@@ -84,7 +169,6 @@ class SettingsUI(ctk.CTk):
     def _start_hotkey_record(self) -> None:
         """Record a hotkey in a background thread to avoid freezing the UI."""
         import keyboard
-        import threading
 
         self.record_button.configure(text="...", state="disabled")
         self.update()
@@ -99,7 +183,7 @@ class SettingsUI(ctk.CTk):
 
         threading.Thread(target=_record, daemon=True).start()
 
-    def _finish_hotkey_record(self, new_hotkey: str | None) -> None:
+    def _finish_hotkey_record(self, new_hotkey: Optional[str]) -> None:
         """Callback on main thread after hotkey recording completes."""
         if new_hotkey:
             self.hotkey_entry.delete(0, "end")
@@ -123,10 +207,17 @@ class SettingsUI(ctk.CTk):
     def save_settings(self) -> None:
         self.config["stt_provider"] = self.stt_provider.get()
         self.config["api_provider"] = self.llm_provider.get()
+        self.config["hotkey"] = self.hotkey_entry.get()
+
+        # Save API keys to keyring (not config file)
+        save_api_key("openai_key", self.openai_key.get())
+        save_api_key("groq_key", self.groq_key.get())
+        save_api_key("anthropic_key", self.anthropic_key.get())
+
+        # These go in config (keys will be stripped by save_config)
         self.config["openai_key"] = self.openai_key.get()
         self.config["groq_key"] = self.groq_key.get()
         self.config["anthropic_key"] = self.anthropic_key.get()
-        self.config["hotkey"] = self.hotkey_entry.get()
 
         try:
             self.config["snippets"] = json.loads(self.snippets_text.get("0.0", "end"))

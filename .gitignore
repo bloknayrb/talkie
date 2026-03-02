@@ -15,7 +15,17 @@ test_recording.wav
 .DS_Store
 Thumbs.db
 
+# Logs
+talkie.log
+talkie.log.*
+
 # Build artifacts
 build/
 dist/
 *.spec
+
+# Letta
+.letta/
+
+# pytest
+.pytest_cache/

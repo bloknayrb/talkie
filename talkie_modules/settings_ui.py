@@ -1,5 +1,6 @@
 import customtkinter as ctk
-from modules.config_manager import load_config, save_config
+import json
+from talkie_modules.config_manager import load_config, save_config
 
 class SettingsUI(ctk.CTk):
     def __init__(self):
@@ -93,9 +94,7 @@ class SettingsUI(ctk.CTk):
         
         save_config(self.config)
         print("Settings saved.")
-        self.withdraw()
-
-import json # For snippets parsing
+        self.withdraw() # Hide window, don't destroy it as it's the root now
 
 if __name__ == "__main__":
     app = SettingsUI()

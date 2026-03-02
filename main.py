@@ -19,6 +19,8 @@ from talkie_modules.api_client import transcribe_audio, process_text_llm
 from talkie_modules.text_injector import inject_text
 from talkie_modules.settings_ui import SettingsUI
 from talkie_modules.state import StateMachine, AppState
+from talkie_modules.notifications import notify_error
+from talkie_modules.exceptions import TalkieError
 
 logger = get_logger("app")
 
@@ -101,8 +103,14 @@ class TalkieApp:
                     logger.info("Transcription: %s", transcription[:100])
                     processed_text = process_text_llm(transcription, context, config)
                     inject_text(processed_text)
+            except TalkieError as e:
+                logger.error("Pipeline error: %s", e)
+                notify_error(str(e))
+                self.state.force(AppState.IDLE)
+                return
             except Exception as e:
-                logger.error("Pipeline error: %s", e, exc_info=True)
+                logger.error("Unexpected pipeline error: %s", e, exc_info=True)
+                notify_error(f"Unexpected error: {e}")
                 self.state.force(AppState.IDLE)
                 return
             self.state.transition(AppState.PROCESSING, AppState.IDLE)

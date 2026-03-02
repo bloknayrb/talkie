@@ -31,9 +31,9 @@ class TalkieApp:
         dc = ImageDraw.Draw(image)
         dc.rectangle([width // 4, height // 4, width * 3 // 4, height * 3 // 4], fill=color2)
         
-        menu = (
-            pystray.item('Settings', self.show_settings),
-            pystray.item('Quit', self.quit_app)
+        menu = pystray.Menu(
+            pystray.MenuItem('Settings', self.show_settings),
+            pystray.MenuItem('Quit', self.quit_app)
         )
         self.tray_icon = pystray.Icon("Talkie", image, "Talkie", menu)
 

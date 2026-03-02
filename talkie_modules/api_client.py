@@ -71,9 +71,9 @@ def process_text_llm(transcription, context, config):
     snippets_str = ", ".join([f"'{k}' to '{v}'" for k, v in config.get("snippets", {}).items()])
     system_prompt = config.get("system_prompt", "").format(snippets=snippets_str)
     
-    prompt = f"<previous_context>{context}</previous_context>
+    prompt = f"""<previous_context>{context}</previous_context>
 
-<transcription>{transcription}</transcription>"
+<transcription>{transcription}</transcription>"""
 
     if provider in ["openai", "groq"]:
         headers = {

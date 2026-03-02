@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from modules.config_manager import load_config, save_config
+from talkie_modules.config_manager import load_config, save_config
 
 class SettingsUI(ctk.CTk):
     def __init__(self):

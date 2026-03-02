@@ -4,13 +4,13 @@ import threading
 import time
 from PIL import Image, ImageDraw
 import pystray
-from modules.config_manager import load_config
-from modules.audio_io import ensure_assets, start_recording, stop_recording
-from modules.hotkey_manager import HotkeyManager
-from modules.context_capture import get_context
-from modules.api_client import transcribe_audio, process_text_llm
-from modules.text_injector import inject_text
-from modules.settings_ui import SettingsUI
+from talkie_modules.config_manager import load_config
+from talkie_modules.audio_io import ensure_assets, start_recording, stop_recording
+from talkie_modules.hotkey_manager import HotkeyManager
+from talkie_modules.context_capture import get_context
+from talkie_modules.api_client import transcribe_audio, process_text_llm
+from talkie_modules.text_injector import inject_text
+from talkie_modules.settings_ui import SettingsUI
 
 class TalkieApp:
     def __init__(self):

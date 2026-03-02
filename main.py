@@ -1,9 +1,16 @@
+"""Talkie — hold-to-talk voice dictation app."""
+
+import logging
 import os
 import sys
 import threading
-import time
+from typing import Optional
+
+from dotenv import load_dotenv
 from PIL import Image, ImageDraw
 import pystray
+
+from talkie_modules.logger import setup_logging, get_logger
 from talkie_modules.config_manager import load_config
 from talkie_modules.audio_io import ensure_assets, start_recording, stop_recording
 from talkie_modules.hotkey_manager import HotkeyManager
@@ -11,98 +18,135 @@ from talkie_modules.context_capture import get_context
 from talkie_modules.api_client import transcribe_audio, process_text_llm
 from talkie_modules.text_injector import inject_text
 from talkie_modules.settings_ui import SettingsUI
+from talkie_modules.state import StateMachine, AppState
+
+logger = get_logger("app")
+
 
 class TalkieApp:
-    def __init__(self):
+    def __init__(self) -> None:
         self.config = load_config()
-        ensure_assets()
-        self.root = None # This will be our SettingsUI
-        self.hotkey_manager = None
-        self.tray_icon = None
-        self.is_processing = False
 
-    def create_tray_icon(self):
-        width = 64
-        height = 64
-        color1 = "blue"
-        color2 = "white"
-        image = Image.new('RGB', (width, height), color1)
+        # Initialize logging from config
+        level = getattr(logging, self.config.get("log_level", "INFO").upper(), logging.INFO)
+        setup_logging(level)
+
+        ensure_assets()
+        self.root: Optional[SettingsUI] = None
+        self.hotkey_manager: Optional[HotkeyManager] = None
+        self.tray_icon: Optional[pystray.Icon] = None
+        self.state: StateMachine = StateMachine()
+        self._pending_context: str = ""
+
+    def create_tray_icon(self) -> None:
+        width, height = 64, 64
+        image = Image.new("RGB", (width, height), "blue")
         dc = ImageDraw.Draw(image)
-        dc.rectangle([width // 4, height // 4, width * 3 // 4, height * 3 // 4], fill=color2)
-        
-        # Use Menu and MenuItem for better tray support
+        dc.rectangle(
+            [width // 4, height // 4, width * 3 // 4, height * 3 // 4], fill="white"
+        )
+
         menu = pystray.Menu(
-            pystray.MenuItem('Settings', self.show_settings),
-            pystray.MenuItem('Quit', self.quit_app)
+            pystray.MenuItem("Settings", self.show_settings),
+            pystray.MenuItem("Quit", self.quit_app),
         )
         self.tray_icon = pystray.Icon("Talkie", image, "Talkie", menu)
 
-    def show_settings(self):
-        # This is called from the tray thread.
-        # We must tell the main thread (Tkinter loop) to show the window.
+    def show_settings(self) -> None:
         if self.root:
             self.root.after(0, self._deiconify_root)
 
-    def _deiconify_root(self):
+    def _deiconify_root(self) -> None:
         if self.root:
             self.root.deiconify()
             self.root.focus_force()
+            self.root.save_button.configure(command=self._save_settings_and_refresh)
 
-    def on_press(self):
-        if self.is_processing:
+    def _save_settings_and_refresh(self) -> None:
+        if self.root:
+            self.root.save_settings()
+            self.config = load_config()
+            if self.hotkey_manager:
+                self.hotkey_manager.stop()
+            self.hotkey_manager = HotkeyManager(
+                self.config.get("hotkey", "alt+space"), self.on_press, self.on_release
+            )
+            self.hotkey_manager.start()
+            logger.info("Hotkey refreshed: %s", self.config.get("hotkey"))
+
+    def on_press(self) -> None:
+        if not self.state.transition(AppState.IDLE, AppState.RECORDING):
+            logger.debug("Ignoring press — not idle (state=%s)", self.state.state.name)
             return
-        print("Holding hotkey...")
-        self.current_context = get_context()
+        logger.info("Holding hotkey...")
+        self._pending_context = get_context()
         start_recording()
 
-    def on_release(self):
-        print("Released hotkey. Processing...")
-        self.is_processing = True
+    def on_release(self) -> None:
+        if not self.state.transition(AppState.RECORDING, AppState.PROCESSING):
+            logger.debug("Ignoring release — not recording (state=%s)", self.state.state.name)
+            return
+
+        logger.info("Released hotkey. Processing...")
         audio_data = stop_recording()
-        
-        def run_pipeline():
+
+        # Snapshot context to avoid race condition on rapid re-press
+        context = self._pending_context
+
+        def run_pipeline() -> None:
             try:
                 if audio_data is not None and len(audio_data) > 0:
                     config = load_config()
                     transcription = transcribe_audio(audio_data, config)
-                    processed_text = process_text_llm(transcription, self.current_context, config)
+                    logger.info("Transcription: %s", transcription[:100])
+                    processed_text = process_text_llm(transcription, context, config)
                     inject_text(processed_text)
             except Exception as e:
-                print(f"Pipeline error: {e}")
-            finally:
-                self.is_processing = False
+                logger.error("Pipeline error: %s", e, exc_info=True)
+                self.state.force(AppState.IDLE)
+                return
+            self.state.transition(AppState.PROCESSING, AppState.IDLE)
 
         threading.Thread(target=run_pipeline, daemon=True).start()
 
-    def quit_app(self, icon=None, item=None):
+    def quit_app(self, icon: object = None, item: object = None) -> None:
+        logger.info("Shutting down Talkie...")
         if self.hotkey_manager:
             self.hotkey_manager.stop()
         if self.tray_icon:
             self.tray_icon.stop()
         if self.root:
-            self.root.destroy()
-        os._exit(0)
+            try:
+                self.root.quit()
+                self.root.destroy()
+            except Exception:
+                pass
+        # Schedule fallback exit in case mainloop doesn't exit cleanly
+        threading.Timer(1.0, lambda: os._exit(0)).start()
 
-    def run(self):
+    def run(self) -> None:
         # 1. Start hotkey listener
-        self.hotkey_manager = HotkeyManager(self.config.get("hotkey", "alt+space"), self.on_press, self.on_release)
+        self.hotkey_manager = HotkeyManager(
+            self.config.get("hotkey", "alt+space"), self.on_press, self.on_release
+        )
         self.hotkey_manager.start()
-        
+
         # 2. Create and start tray icon in a separate thread
         self.create_tray_icon()
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
-        
+
         # 3. Initialize the Tkinter app (SettingsUI) on the main thread
-        # It starts withdrawn (hidden) by default or we withdraw it immediately.
         self.root = SettingsUI()
-        self.root.withdraw() # Start hidden
-        
-        # 4. Handle window close (X button) - just hide it
+        self.root.withdraw()
+
+        # 4. Handle window close (X button) — just hide it
         self.root.protocol("WM_DELETE_WINDOW", self.root.withdraw)
-        
-        print("Talkie is running (Main Thread in Tkinter Loop).")
+
+        logger.info("Talkie is running.")
         self.root.mainloop()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
+    load_dotenv()
     app = TalkieApp()
     app.run()

@@ -1,31 +1,31 @@
-import pyperclip
-import pyautogui
-import time
+"""Inject processed text into the active application via clipboard paste."""
 
-def inject_text(text):
-    """
-    Injects text into the active application by pasting.
-    """
+import time
+from typing import Optional
+
+import pyautogui
+import pyperclip
+
+from talkie_modules.logger import get_logger
+
+logger = get_logger("injector")
+
+
+def inject_text(text: Optional[str]) -> None:
+    """Paste text into the focused application, preserving the original clipboard."""
     if not text:
+        logger.debug("Nothing to inject (empty text)")
         return
 
-    # Save current clipboard
-    old_clipboard = pyperclip.paste()
-    
-    # Put new text in clipboard
+    old_clipboard: str = pyperclip.paste()
     pyperclip.copy(text)
-    
-    # Simulate paste
-    pyautogui.hotkey('ctrl', 'v')
-    
-    # Wait for the paste to complete
+    pyautogui.hotkey("ctrl", "v")
     time.sleep(0.15)
-    
-    # Restore original clipboard
     pyperclip.copy(old_clipboard)
+    logger.info("Injected %d chars", len(text))
+
 
 if __name__ == "__main__":
-    # Test
     print("Wait 3 seconds, then focus on some text field...")
     time.sleep(3)
     inject_text("Hello, this is a test injection.")

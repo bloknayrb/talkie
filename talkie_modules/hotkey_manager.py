@@ -32,7 +32,8 @@ class HotkeyManager:
         """Check if event_name matches key, including left/right variants."""
         return event_name in (key, f"left {key}", f"right {key}")
 
-    def _on_key_event(self, event: keyboard.KeyboardEvent) -> None:
+    def _on_key_event(self, event: keyboard.KeyboardEvent) -> Optional[bool]:
+        """Handle key events. Returns False to suppress OS-level side effects."""
         all_mods_pressed: bool = all(
             keyboard.is_pressed(mod)
             or keyboard.is_pressed(f"left {mod}")
@@ -47,12 +48,18 @@ class HotkeyManager:
                     logger.info("Hotkey pressed: %s", self.hotkey)
                     if self.on_press:
                         self.on_press()
+                # Suppress trigger key while modifiers held to prevent
+                # OS side effects (e.g. Windows key opening Start Menu)
+                if all_mods_pressed:
+                    return False
             elif event.event_type == keyboard.KEY_UP:
                 if self.is_held:
                     self.is_held = False
                     logger.info("Hotkey released: %s", self.hotkey)
                     if self.on_release:
                         self.on_release()
+                    return False
+        return None
 
     def start(self) -> None:
         """Start listening for the hotkey."""

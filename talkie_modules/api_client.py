@@ -67,9 +67,10 @@ def transcribe_audio(audio_data: npt.NDArray, config: dict[str, Any]) -> str:
     buffer = io.BytesIO()
     sf.write(buffer, audio_data, 16000, format="WAV")
     buffer.seek(0)
+    wav_size = buffer.getbuffer().nbytes
     buffer.name = "audio.wav"  # SDK needs a .name attribute
 
-    logger.info("Transcribing with %s (model=%s)", provider, model)
+    logger.info("Transcribing with %s (model=%s), WAV buffer: %d bytes", provider, model, wav_size)
 
     try:
         transcription = client.audio.transcriptions.create(
@@ -77,7 +78,7 @@ def transcribe_audio(audio_data: npt.NDArray, config: dict[str, Any]) -> str:
             file=buffer,
         )
         text = transcription.text
-        logger.info("Transcription complete: %d chars", len(text))
+        logger.info("Transcription: %d chars — %r", len(text), text[:100])
         return text
     except Exception as e:
         raise _wrap_api_error(e, provider, "STT") from e

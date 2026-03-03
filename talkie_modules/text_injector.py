@@ -12,16 +12,13 @@ logger = get_logger("injector")
 
 
 def inject_text(text: Optional[str]) -> None:
-    """Paste text into the focused application, preserving the original clipboard."""
+    """Paste text into the focused application via clipboard."""
     if not text:
         logger.debug("Nothing to inject (empty text)")
         return
 
-    old_clipboard: str = pyperclip.paste()
     pyperclip.copy(text)
     pyautogui.hotkey("ctrl", "v")
-    time.sleep(0.15)
-    pyperclip.copy(old_clipboard)
     logger.info("Injected %d chars", len(text))
 
 

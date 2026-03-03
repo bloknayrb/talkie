@@ -102,18 +102,27 @@ def stop_recording() -> Optional[npt.NDArray]:
     """Stop recording and return captured audio as numpy array, or None if empty."""
     global _recording, _recording_thread, _recorded_data
     _recording = False
-    play_stop_chime()
 
     if _recording_thread:
         _recording_thread.join(timeout=5.0)
         if _recording_thread.is_alive():
             logger.warning("Recording thread did not stop within 5s")
 
+    play_stop_chime()
+
     while not _audio_queue.empty():
         _recorded_data.append(_audio_queue.get())
 
-    logger.info("Recording stopped, %d chunks captured", len(_recorded_data))
-
     if _recorded_data:
-        return np.concatenate(_recorded_data, axis=0)
+        audio = np.concatenate(_recorded_data, axis=0)
+        duration_s = len(audio) / RECORDING_RATE
+        logger.info(
+            "Recording stopped: %.1f seconds (%d samples), shape=%s",
+            duration_s,
+            len(audio),
+            audio.shape,
+        )
+        return audio
+
+    logger.info("Recording stopped: no audio captured")
     return np.array([])

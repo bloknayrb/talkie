@@ -34,24 +34,36 @@ class HotkeyManager:
         self.trigger_key: str = parts[-1].strip()
         self.modifiers: list[str] = [m.strip() for m in parts[:-1]]
 
-    @staticmethod
-    def _matches_key(event_name: str, key: str) -> bool:
-        """Check if event_name matches key, including left/right variants."""
-        return event_name in (key, f"left {key}", f"right {key}")
+        # Resolve to scan codes for debug logging (handles aliases like "win" -> "windows")
+        try:
+            self._trigger_codes: set[int] = set(keyboard.key_to_scan_codes(self.trigger_key))
+        except ValueError:
+            logger.error("Unknown trigger key '%s' in hotkey config", self.trigger_key)
+            raise
+        self._modifier_codes: dict[str, set[int]] = {}
+        for mod in self.modifiers:
+            try:
+                self._modifier_codes[mod] = set(keyboard.key_to_scan_codes(mod))
+            except ValueError:
+                logger.error("Unknown modifier key '%s' in hotkey config", mod)
+                raise
 
-    def _on_trigger_key(self, event: keyboard.KeyboardEvent) -> Optional[bool]:
+        logger.debug(
+            "Hotkey scan codes: trigger=%s mods=%s",
+            self._trigger_codes,
+            self._modifier_codes,
+        )
+
+    def _on_trigger_key(self, event: keyboard.KeyboardEvent) -> bool:
         """Handle trigger key events.  Runs in the hook thread (synchronous).
 
         Returns ``False`` to suppress the event, ``True`` to pass through.
-        Because we registered via ``hook_key``, this callback is only
-        invoked for the trigger key's scan-codes — other keys are never
-        affected.
+        Because we registered via ``hook_key(..., suppress=True)``, this
+        callback is only invoked for the trigger key's scan-codes — other
+        keys are never affected.
         """
         all_mods_pressed: bool = all(
-            keyboard.is_pressed(mod)
-            or keyboard.is_pressed(f"left {mod}")
-            or keyboard.is_pressed(f"right {mod}")
-            for mod in self.modifiers
+            keyboard.is_pressed(mod) for mod in self.modifiers
         ) if self.modifiers else True
 
         if event.event_type == keyboard.KEY_DOWN:

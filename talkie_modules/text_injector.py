@@ -3,7 +3,7 @@
 import time
 from typing import Optional
 
-import pyautogui
+import keyboard
 import pyperclip
 
 from talkie_modules.logger import get_logger
@@ -18,7 +18,7 @@ def inject_text(text: Optional[str]) -> None:
         return
 
     pyperclip.copy(text)
-    pyautogui.hotkey("ctrl", "v")
+    keyboard.send("ctrl+v")
     logger.info("Injected %d chars", len(text))
 
 

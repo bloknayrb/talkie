@@ -158,13 +158,44 @@ class SettingsUI(ctk.CTk):
         self.hotkey_frame.pack(pady=10)
 
         self.hotkey_entry = ctk.CTkEntry(self.hotkey_frame, width=200)
-        self.hotkey_entry.insert(0, self.config.get("hotkey", "alt+space"))
+        self.hotkey_entry.insert(0, self.config.get("hotkey", "ctrl+win"))
         self.hotkey_entry.pack(side="left", padx=5)
 
         self.record_button = ctk.CTkButton(
             self.hotkey_frame, text="Record", width=80, command=self._start_hotkey_record
         )
         self.record_button.pack(side="left", padx=5)
+
+        # --- Recording gates ---
+        ctk.CTkLabel(tab, text="").pack()  # spacer
+
+        # Min hold duration
+        hold_frame = ctk.CTkFrame(tab)
+        hold_frame.pack(pady=5, fill="x", padx=20)
+        ctk.CTkLabel(hold_frame, text="Min hold (seconds):").pack(side="left", padx=5)
+        self.min_hold_var = ctk.DoubleVar(value=self.config.get("min_hold_seconds", 1.0))
+        self.min_hold_label = ctk.CTkLabel(hold_frame, text=f"{self.min_hold_var.get():.1f}s", width=40)
+        self.min_hold_label.pack(side="right", padx=5)
+        self.min_hold_slider = ctk.CTkSlider(
+            hold_frame, from_=0.2, to=3.0, number_of_steps=28,
+            variable=self.min_hold_var,
+            command=lambda v: self.min_hold_label.configure(text=f"{v:.1f}s"),
+        )
+        self.min_hold_slider.pack(side="right", padx=5, fill="x", expand=True)
+
+        # Silence threshold
+        silence_frame = ctk.CTkFrame(tab)
+        silence_frame.pack(pady=5, fill="x", padx=20)
+        ctk.CTkLabel(silence_frame, text="Silence threshold:").pack(side="left", padx=5)
+        self.silence_var = ctk.DoubleVar(value=self.config.get("silence_rms_threshold", 0.01))
+        self.silence_label = ctk.CTkLabel(silence_frame, text=f"{self.silence_var.get():.3f}", width=50)
+        self.silence_label.pack(side="right", padx=5)
+        self.silence_slider = ctk.CTkSlider(
+            silence_frame, from_=0.001, to=0.1, number_of_steps=99,
+            variable=self.silence_var,
+            command=lambda v: self.silence_label.configure(text=f"{v:.3f}"),
+        )
+        self.silence_slider.pack(side="right", padx=5, fill="x", expand=True)
 
     def _start_hotkey_record(self) -> None:
         """Record a hotkey in a background thread to avoid freezing the UI."""
@@ -208,6 +239,8 @@ class SettingsUI(ctk.CTk):
         self.config["stt_provider"] = self.stt_provider.get()
         self.config["api_provider"] = self.llm_provider.get()
         self.config["hotkey"] = self.hotkey_entry.get()
+        self.config["min_hold_seconds"] = round(self.min_hold_var.get(), 1)
+        self.config["silence_rms_threshold"] = round(self.silence_var.get(), 3)
 
         # Save API keys to keyring (not config file)
         save_api_key("openai_key", self.openai_key.get())

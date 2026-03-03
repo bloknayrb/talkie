@@ -19,11 +19,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "openai_key": "",
     "groq_key": "",
     "anthropic_key": "",
-    "hotkey": "alt+space",
+    "hotkey": "ctrl+win",
     "snippets": {
         "gm": "Good morning",
         "br": "Best regards",
     },
+    "min_hold_seconds": 1.0,
+    "silence_rms_threshold": 0.005,
     "custom_vocabulary": ["Talkie", "Wispr Flow"],
     "system_prompt": (
         "You are an expert transcriber. Transcribe the following audio based on the "

@@ -59,6 +59,13 @@ def play_stop_chime() -> None:
     sd.play(data, fs)
 
 
+def compute_rms(audio: npt.NDArray) -> float:
+    """Compute RMS energy of audio data."""
+    if len(audio) == 0:
+        return 0.0
+    return float(np.sqrt(np.mean(audio.astype(np.float64) ** 2)))
+
+
 # ---------------------------------------------------------------------------
 # Module-level recording state (will be replaced by AudioRecorder in Phase 2)
 # ---------------------------------------------------------------------------
@@ -107,8 +114,6 @@ def stop_recording() -> Optional[npt.NDArray]:
         _recording_thread.join(timeout=5.0)
         if _recording_thread.is_alive():
             logger.warning("Recording thread did not stop within 5s")
-
-    play_stop_chime()
 
     while not _audio_queue.empty():
         _recorded_data.append(_audio_queue.get())

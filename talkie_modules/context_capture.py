@@ -20,8 +20,8 @@ def get_context() -> str:
     try:
         focused_control = auto.GetFocusedControl()
         if focused_control:
-            if focused_control.HasPattern(auto.PatternId.TextPattern):
-                pattern = focused_control.GetPattern(auto.PatternId.TextPattern)
+            pattern = focused_control.GetPattern(auto.PatternId.TextPattern)
+            if pattern:
                 selection = pattern.GetSelection()
                 if selection and len(selection) > 0:
                     range_before = pattern.DocumentRange.Clone()
@@ -54,8 +54,9 @@ def _get_context_fallback() -> str:
         pyperclip.copy(original_clipboard)
 
         if context == original_clipboard:
-            # Ambiguous — clipboard didn't change, may have failed
-            logger.debug("Fallback context same as original clipboard")
+            # Clipboard didn't change — copy failed (e.g. modifier keys held)
+            logger.debug("Fallback context same as original clipboard — treating as no context")
+            return ""
 
         logger.debug("Fallback captured %d chars", len(context))
         return context

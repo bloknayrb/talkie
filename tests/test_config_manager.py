@@ -26,8 +26,10 @@ def temp_config(tmp_path):
 class TestLoadConfig:
     def test_creates_default_when_missing(self, temp_config: str) -> None:
         config = load_config()
-        assert config["hotkey"] == "alt+space"
+        assert config["hotkey"] == "ctrl+win"
         assert config["api_provider"] == "openai"
+        assert config["min_hold_seconds"] == 1.0
+        assert config["silence_rms_threshold"] == 0.005
         # File should have been created
         assert os.path.exists(temp_config)
 
@@ -60,7 +62,7 @@ class TestLoadConfig:
 
         config = load_config()
         # Falls back to defaults
-        assert config["hotkey"] == "alt+space"
+        assert config["hotkey"] == "ctrl+win"
 
 
 class TestValidateApiKeyFormat:

@@ -2,7 +2,7 @@
 
 import threading
 from enum import Enum, auto
-from typing import Optional
+from typing import Callable, Optional
 
 from talkie_modules.logger import get_logger
 
@@ -30,7 +30,7 @@ class StateMachine:
     def __init__(self) -> None:
         self._state: AppState = AppState.IDLE
         self._lock: threading.Lock = threading.Lock()
-        self._callbacks: list[callable] = []
+        self._callbacks: list[Callable[[AppState], None]] = []
 
     @property
     def state(self) -> AppState:

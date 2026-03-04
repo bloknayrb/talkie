@@ -2,7 +2,6 @@
 
 import logging
 import os
-import sys
 import threading
 import time
 from typing import Optional
@@ -122,24 +121,22 @@ class TalkieApp:
             min_hold = config.get("min_hold_seconds", 1.0)
             silence_threshold = config.get("silence_rms_threshold", 0.005)
 
+            def _discard(reason: str, *args: object) -> None:
+                logger.info(reason, *args)
+                self.state.transition(AppState.PROCESSING, AppState.IDLE)
+
             # Gate 1: minimum hold duration
             if elapsed < min_hold:
-                logger.info("Recording too short (%.1fs < %.1fs), discarding", elapsed, min_hold)
-                self.state.transition(AppState.PROCESSING, AppState.IDLE)
-                return
+                return _discard("Recording too short (%.1fs < %.1fs), discarding", elapsed, min_hold)
 
-            # Gate 2: silence detection
-            if audio_data is not None and len(audio_data) > 0:
-                rms = compute_rms(audio_data)
-                logger.debug("Audio RMS: %.4f (threshold: %.4f)", rms, silence_threshold)
-                if rms < silence_threshold:
-                    logger.info("Audio too quiet (RMS=%.4f), discarding", rms)
-                    self.state.transition(AppState.PROCESSING, AppState.IDLE)
-                    return
-            else:
-                logger.info("No audio captured, discarding")
-                self.state.transition(AppState.PROCESSING, AppState.IDLE)
-                return
+            # Gate 2: no audio or silence
+            if audio_data is None or len(audio_data) == 0:
+                return _discard("No audio captured, discarding")
+
+            rms = compute_rms(audio_data)
+            logger.debug("Audio RMS: %.4f (threshold: %.4f)", rms, silence_threshold)
+            if rms < silence_threshold:
+                return _discard("Audio too quiet (RMS=%.4f), discarding", rms)
 
             play_stop_chime()  # Only when we'll actually process
 

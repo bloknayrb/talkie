@@ -10,6 +10,15 @@ from talkie_modules.logger import get_logger
 logger = get_logger("hotkey")
 
 
+def _resolve_scan_codes(key: str) -> set[int]:
+    """Resolve a key name to its scan codes, logging on failure."""
+    try:
+        return set(keyboard.key_to_scan_codes(key))
+    except ValueError:
+        logger.error("Unknown key '%s' in hotkey config", key)
+        raise
+
+
 class HotkeyManager:
     """Listens for a configurable hold-to-talk hotkey.
 
@@ -35,18 +44,10 @@ class HotkeyManager:
         self.modifiers: list[str] = [m.strip() for m in parts[:-1]]
 
         # Resolve to scan codes for debug logging (handles aliases like "win" -> "windows")
-        try:
-            self._trigger_codes: set[int] = set(keyboard.key_to_scan_codes(self.trigger_key))
-        except ValueError:
-            logger.error("Unknown trigger key '%s' in hotkey config", self.trigger_key)
-            raise
-        self._modifier_codes: dict[str, set[int]] = {}
-        for mod in self.modifiers:
-            try:
-                self._modifier_codes[mod] = set(keyboard.key_to_scan_codes(mod))
-            except ValueError:
-                logger.error("Unknown modifier key '%s' in hotkey config", mod)
-                raise
+        self._trigger_codes: set[int] = _resolve_scan_codes(self.trigger_key)
+        self._modifier_codes: dict[str, set[int]] = {
+            mod: _resolve_scan_codes(mod) for mod in self.modifiers
+        }
 
         logger.debug(
             "Hotkey scan codes: trigger=%s mods=%s",
@@ -70,9 +71,8 @@ class HotkeyManager:
             if all_mods_pressed and not self.is_held:
                 self.is_held = True
                 logger.info("Hotkey pressed: %s", self.hotkey)
-                if self.on_press:
-                    # Dispatch to thread — hook thread has ~300ms Windows timeout
-                    threading.Thread(target=self.on_press, daemon=True).start()
+                # Dispatch to thread — hook thread has ~300ms Windows timeout
+                threading.Thread(target=self.on_press, daemon=True).start()
             # Suppress trigger key while modifiers held to prevent
             # OS side effects (e.g. Windows key opening Start Menu)
             if all_mods_pressed:
@@ -81,8 +81,7 @@ class HotkeyManager:
             if self.is_held:
                 self.is_held = False
                 logger.info("Hotkey released: %s", self.hotkey)
-                if self.on_release:
-                    threading.Thread(target=self.on_release, daemon=True).start()
+                threading.Thread(target=self.on_release, daemon=True).start()
                 return False
         return True
 

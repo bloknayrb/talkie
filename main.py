@@ -14,7 +14,7 @@ from talkie_modules.logger import setup_logging, get_logger
 from talkie_modules.config_manager import load_config
 from talkie_modules.audio_io import ensure_assets, start_recording, stop_recording, play_stop_chime, compute_rms
 from talkie_modules.hotkey_manager import HotkeyManager
-from talkie_modules.context_capture import get_context
+from talkie_modules.context_capture import get_context, get_target_hwnd
 from talkie_modules.api_client import transcribe_audio, process_text_llm
 from talkie_modules.text_injector import inject_text
 from talkie_modules.settings_ui import SettingsUI
@@ -38,6 +38,7 @@ class TalkieApp:
         self.tray_icon: Optional[pystray.Icon] = None
         self.state: StateMachine = StateMachine()
         self._pending_context: str = ""
+        self._pending_hwnd: int = 0
         self._press_time: float = 0.0
         self._last_injected: str = ""
 
@@ -98,7 +99,8 @@ class TalkieApp:
             return
         logger.info("Holding hotkey...")
         self._press_time = time.time()
-        self._pending_context = get_context()
+        self._pending_hwnd = get_target_hwnd()  # FIRST — before any I/O
+        self._pending_context = get_context()    # May take 150ms+
         start_recording()
 
     def on_release(self) -> None:
@@ -108,8 +110,9 @@ class TalkieApp:
 
         logger.info("Released hotkey. Processing...")
 
-        # Snapshot context and press time to avoid race condition on rapid re-press
+        # Snapshot state to avoid race condition on rapid re-press
         context = self._pending_context
+        target_hwnd = self._pending_hwnd
         press_time = self._press_time
 
         def run_pipeline() -> None:
@@ -145,7 +148,7 @@ class TalkieApp:
                 logger.info("Transcription: %s", transcription[:100])
                 clean_context = self._strip_prior_injection(context)
                 processed_text = process_text_llm(transcription, clean_context, config)
-                inject_text(processed_text)
+                inject_text(processed_text, target_hwnd)
                 self._last_injected = processed_text
             except TalkieError as e:
                 logger.error("Pipeline error: %s", e)

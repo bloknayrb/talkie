@@ -29,3 +29,6 @@ dist/
 
 # pytest
 .pytest_cache/
+
+# Worktrees
+.worktrees/

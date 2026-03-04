@@ -27,7 +27,6 @@ EXCLUDE_MODULES = [
     "lxml",
     "openpyxl",
     "dns",
-    "customtkinter",
     "tkinter",
 ]
 

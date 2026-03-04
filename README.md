@@ -13,7 +13,7 @@ Talkie is a local, Windows-based dictation utility designed to be a lightweight 
 - **Custom Vocabulary**: Ensure specific names, brands, or technical terms are always spelled correctly.
 - **Audio Feedback**: Soft pop sounds for recording start/stop — quick 30ms taps instead of harsh beeps.
 - **First-Run Onboarding**: Auto-opens Settings with a Quick Start guide and progress badges when API keys are missing.
-- **Modern Settings UI**: Dark-themed web interface (pywebview + Bottle) with sidebar navigation — Providers, API Keys, Hotkey, Snippets, Vocabulary, and About sections.
+- **Modern Settings UI**: Dark-themed web interface (Bottle web server + browser) with sidebar navigation — Providers, API Keys, Hotkey, Snippets, Vocabulary, and About sections.
 - **Secure Key Storage**: API keys stored in Windows Credential Manager, never in config files.
 - **Error Notifications**: Windows toast notifications for pipeline errors and discarded recordings.
 - **Single Instance**: Only one copy can run at a time — prevents duplicate hotkey hooks.
@@ -95,8 +95,7 @@ talkie_modules/
     hotkey_manager.py            # Global key hold/release listener
     text_injector.py             # Pastes processed text via clipboard
     settings_server.py           # Bottle REST API for settings web UI
-    status_indicator.py          # PIL-rendered anti-aliased indicator (Tkinter backend)
-    status_indicator_native.py   # Win32 native layered window indicator (production)
+    status_indicator_native.py   # Win32 native layered window indicator
     icon_generator.py            # PIL-generated walkie-talkie icon
     notifications.py             # Windows toast notifications and error chimes
     web_ui/

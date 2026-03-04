@@ -136,6 +136,7 @@ _recording: bool = False
 _audio_queue: queue.Queue = queue.Queue()
 _recording_thread: Optional[threading.Thread] = None
 _recorded_data: list[npt.NDArray] = []
+_recording_error: Optional[str] = None
 
 
 def _record_callback(indata: npt.NDArray, frames: int, time: object, status: sd.CallbackFlags) -> None:
@@ -147,17 +148,23 @@ def _record_callback(indata: npt.NDArray, frames: int, time: object, status: sd.
 
 def start_recording() -> None:
     """Begin capturing audio from the default input device."""
-    global _recording, _audio_queue, _recorded_data, _recording_thread
+    global _recording, _audio_queue, _recorded_data, _recording_thread, _recording_error
     _recording = True
     _recorded_data = []
+    _recording_error = None
     # Drain stale data
     while not _audio_queue.empty():
         _audio_queue.get()
 
     def record_loop() -> None:
-        with sd.InputStream(samplerate=RECORDING_RATE, channels=1, callback=_record_callback):
-            while _recording:
-                sd.sleep(100)
+        global _recording_error
+        try:
+            with sd.InputStream(samplerate=RECORDING_RATE, channels=1, callback=_record_callback):
+                while _recording:
+                    sd.sleep(100)
+        except Exception as e:
+            _recording_error = str(e)
+            logger.error("Recording stream failed: %s", e)
 
     _recording_thread = threading.Thread(target=record_loop, daemon=True)
     _recording_thread.start()
@@ -167,7 +174,7 @@ def start_recording() -> None:
 
 def stop_recording() -> Optional[npt.NDArray]:
     """Stop recording and return captured audio as numpy array, or None if empty."""
-    global _recording, _recording_thread, _recorded_data
+    global _recording, _recording_thread, _recorded_data, _recording_error
     _recording = False
 
     if _recording_thread:
@@ -188,6 +195,13 @@ def stop_recording() -> Optional[npt.NDArray]:
             audio.shape,
         )
         return audio
+
+    # Distinguish "silence" from "device error"
+    if _recording_error:
+        err = _recording_error
+        _recording_error = None
+        logger.error("Recording failed due to device error: %s", err)
+        return None
 
     logger.info("Recording stopped: no audio captured")
     return None

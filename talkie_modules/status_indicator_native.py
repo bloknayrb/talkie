@@ -39,6 +39,37 @@ user32 = ctypes.windll.user32
 gdi32 = ctypes.windll.gdi32
 kernel32 = ctypes.windll.kernel32
 
+# Set argtypes for DefWindowProcW to handle large LPARAM values on 64-bit
+user32.DefWindowProcW.argtypes = [
+    ctypes.wintypes.HWND, ctypes.c_uint, ctypes.wintypes.WPARAM, ctypes.wintypes.LPARAM,
+]
+user32.DefWindowProcW.restype = ctypes.c_long
+
+# Win32 callback type for window procedures
+WNDPROC = ctypes.WINFUNCTYPE(
+    ctypes.c_long,
+    ctypes.wintypes.HWND,
+    ctypes.c_uint,
+    ctypes.wintypes.WPARAM,
+    ctypes.wintypes.LPARAM,
+)
+
+
+class WNDCLASSW(ctypes.Structure):
+    """Win32 WNDCLASSW structure — not in ctypes.wintypes."""
+    _fields_ = [
+        ("style", ctypes.c_uint),
+        ("lpfnWndProc", WNDPROC),
+        ("cbClsExtra", ctypes.c_int),
+        ("cbWndExtra", ctypes.c_int),
+        ("hInstance", ctypes.wintypes.HINSTANCE),
+        ("hIcon", ctypes.wintypes.HICON),
+        ("hCursor", ctypes.wintypes.HANDLE),
+        ("hbrBackground", ctypes.wintypes.HBRUSH),
+        ("lpszMenuName", ctypes.wintypes.LPCWSTR),
+        ("lpszClassName", ctypes.wintypes.LPCWSTR),
+    ]
+
 
 class BLENDFUNCTION(ctypes.Structure):
     _fields_ = [
@@ -113,23 +144,31 @@ class NativeStatusIndicator:
 
     def _create_window(self) -> None:
         """Create a layered Win32 window."""
-        # Register a window class
         wc_name = "TalkieIndicator"
-        wc = ctypes.wintypes.WNDCLASS()
-        wc.lpfnWndProc = ctypes.WINFUNCTYPE(
-            ctypes.c_long,
-            ctypes.wintypes.HWND,
-            ctypes.c_uint,
-            ctypes.wintypes.WPARAM,
-            ctypes.wintypes.LPARAM,
-        )(lambda hwnd, msg, wp, lp: user32.DefWindowProcW(hwnd, msg, wp, lp))
+
+        # Must keep the callback alive as an instance attribute to prevent GC
+        self._wndproc = WNDPROC(
+            lambda hwnd, msg, wp, lp: user32.DefWindowProcW(hwnd, msg, wp, lp)
+        )
+
+        wc = WNDCLASSW()
+        wc.style = 0
+        wc.lpfnWndProc = self._wndproc
+        wc.cbClsExtra = 0
+        wc.cbWndExtra = 0
         wc.hInstance = kernel32.GetModuleHandleW(None)
+        wc.hIcon = 0
+        wc.hCursor = 0
+        wc.hbrBackground = 0
+        wc.lpszMenuName = None
         wc.lpszClassName = wc_name
 
-        try:
-            user32.RegisterClassW(ctypes.byref(wc))
-        except Exception:
-            pass  # Already registered
+        atom = user32.RegisterClassW(ctypes.byref(wc))
+        if not atom:
+            # Class may already be registered from a previous instance
+            err = kernel32.GetLastError()
+            if err != 1410:  # ERROR_CLASS_ALREADY_EXISTS
+                logger.warning("RegisterClassW failed: error %d", err)
 
         ex_style = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW
 

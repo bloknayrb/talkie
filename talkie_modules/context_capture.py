@@ -1,5 +1,7 @@
 """Capture text context around the cursor for Talkie."""
 
+import ctypes
+import ctypes.wintypes
 import time
 
 import pyautogui
@@ -9,6 +11,20 @@ import uiautomation as auto
 from talkie_modules.logger import get_logger
 
 logger = get_logger("context")
+
+
+def get_target_hwnd() -> int:
+    """Return HWND of the current foreground window. Called at hotkey press time."""
+    try:
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        if hwnd:
+            buf = ctypes.create_unicode_buffer(256)
+            ctypes.windll.user32.GetWindowTextW(hwnd, buf, 256)
+            logger.debug("Captured target HWND=%d title=%r", hwnd, buf.value)
+        return hwnd if hwnd else 0
+    except Exception as e:
+        logger.warning("GetForegroundWindow failed: %s", e)
+        return 0
 
 
 def get_context() -> str:

@@ -18,21 +18,22 @@ def get_context() -> str:
     Returns captured context string (may be empty).
     """
     try:
-        focused_control = auto.GetFocusedControl()
-        if focused_control:
-            pattern = focused_control.GetPattern(auto.PatternId.TextPattern)
-            if pattern:
-                selection = pattern.GetSelection()
-                if selection and len(selection) > 0:
-                    range_before = pattern.DocumentRange.Clone()
-                    range_before.MoveEndpointByRange(
-                        auto.TextPatternRangeEndpoint.End,
-                        selection[0],
-                        auto.TextPatternRangeEndpoint.Start,
-                    )
-                    context = range_before.GetText(-1)
-                    logger.debug("UIAutomation captured %d chars", len(context))
-                    return context
+        with auto.UIAutomationInitializerInThread():
+            focused_control = auto.GetFocusedControl()
+            if focused_control:
+                pattern = focused_control.GetPattern(auto.PatternId.TextPattern)
+                if pattern:
+                    selection = pattern.GetSelection()
+                    if selection and len(selection) > 0:
+                        range_before = pattern.DocumentRange.Clone()
+                        range_before.MoveEndpointByRange(
+                            auto.TextPatternRangeEndpoint.End,
+                            selection[0],
+                            auto.TextPatternRangeEndpoint.Start,
+                        )
+                        context = range_before.GetText(-1)
+                        logger.debug("UIAutomation captured %d chars", len(context))
+                        return context
     except Exception as e:
         logger.warning("UIAutomation context capture failed: %s", e)
 

@@ -40,6 +40,22 @@ class TalkieApp:
         self.state: StateMachine = StateMachine()
         self._pending_context: str = ""
         self._press_time: float = 0.0
+        self._last_injected: str = ""
+
+    def _strip_prior_injection(self, context: str) -> str:
+        """Remove Talkie's own prior injection from captured context."""
+        if not self._last_injected:
+            return context
+        # Normalize trailing whitespace — apps may add spaces/newlines after paste
+        norm_context = context.rstrip()
+        norm_last = self._last_injected.rstrip()
+        if norm_last and norm_context.endswith(norm_last):
+            stripped = norm_context[:-len(norm_last)]
+            logger.debug("Stripped %d chars of prior injection, %d remain",
+                         len(norm_last), len(stripped))
+            self._last_injected = ""  # Clear after one use to limit false positives
+            return stripped
+        return context
 
     def create_tray_icon(self) -> None:
         width, height = 64, 64
@@ -104,7 +120,7 @@ class TalkieApp:
             elapsed = time.time() - press_time
             config = load_config()
             min_hold = config.get("min_hold_seconds", 1.0)
-            silence_threshold = config.get("silence_rms_threshold", 0.01)
+            silence_threshold = config.get("silence_rms_threshold", 0.005)
 
             # Gate 1: minimum hold duration
             if elapsed < min_hold:
@@ -130,16 +146,20 @@ class TalkieApp:
             try:
                 transcription = transcribe_audio(audio_data, config)
                 logger.info("Transcription: %s", transcription[:100])
-                processed_text = process_text_llm(transcription, context, config)
+                clean_context = self._strip_prior_injection(context)
+                processed_text = process_text_llm(transcription, clean_context, config)
                 inject_text(processed_text)
+                self._last_injected = processed_text
             except TalkieError as e:
                 logger.error("Pipeline error: %s", e)
                 notify_error(str(e))
+                self._last_injected = ""
                 self.state.force(AppState.IDLE)
                 return
             except Exception as e:
                 logger.error("Unexpected pipeline error: %s", e, exc_info=True)
                 notify_error(f"Unexpected error: {e}")
+                self._last_injected = ""
                 self.state.force(AppState.IDLE)
                 return
             self.state.transition(AppState.PROCESSING, AppState.IDLE)

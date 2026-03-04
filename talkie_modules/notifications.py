@@ -49,7 +49,7 @@ def show_toast(title: str, message: str, duration: str = "short") -> None:
 def play_discard_chime() -> None:
     """Play a subtle notification chime for discarded recordings (non-blocking)."""
     try:
-        winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+        winsound.MessageBeep(winsound.MB_OK)
     except Exception as e:
         logger.debug("Could not play discard chime: %s", e)
 

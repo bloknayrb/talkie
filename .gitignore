@@ -7,9 +7,9 @@ venv/
 
 # Project specific
 config.json
-assets/
+assets/*.wav
+!assets/talkie.ico
 test_recording.wav
-*.wav
 
 # OS specific
 .DS_Store

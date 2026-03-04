@@ -50,15 +50,21 @@ def ensure_assets() -> None:
 
 
 def play_start_chime() -> None:
-    """Play the recording-start chime."""
-    data, fs = sf.read(START_WAV)
-    sd.play(data, fs)
+    """Play the recording-start chime. Failure is non-fatal."""
+    try:
+        data, fs = sf.read(START_WAV)
+        sd.play(data, fs)
+    except Exception as e:
+        logger.warning("Could not play start chime: %s", e)
 
 
 def play_stop_chime() -> None:
-    """Play the recording-stop chime."""
-    data, fs = sf.read(STOP_WAV)
-    sd.play(data, fs)
+    """Play the recording-stop chime. Failure is non-fatal."""
+    try:
+        data, fs = sf.read(STOP_WAV)
+        sd.play(data, fs)
+    except Exception as e:
+        logger.warning("Could not play stop chime: %s", e)
 
 
 def compute_rms(audio: npt.NDArray) -> float:

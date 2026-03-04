@@ -46,6 +46,20 @@ def show_toast(title: str, message: str, duration: str = "short") -> None:
         logger.info("Notification: %s — %s", title, message)
 
 
+def play_discard_chime() -> None:
+    """Play a subtle notification chime for discarded recordings (non-blocking)."""
+    try:
+        winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+    except Exception as e:
+        logger.debug("Could not play discard chime: %s", e)
+
+
+def notify_discard(reason: str) -> None:
+    """Play discard chime and show toast for discarded recordings."""
+    play_discard_chime()
+    show_toast("Talkie", reason)
+
+
 def notify_error(message: str) -> None:
     """Play error chime and show toast notification for pipeline errors."""
     play_error_chime()

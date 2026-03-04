@@ -27,9 +27,15 @@ def get_target_hwnd() -> int:
         return 0
 
 
-def get_context() -> str:
+def get_context(use_fallback: bool = True) -> str:
     """
     Capture text before the cursor using UIAutomation, falling back to clipboard.
+
+    Args:
+        use_fallback: If True (default), fall back to keyboard-based capture when
+            UIAutomation fails. Set to False when modifier keys are held (e.g. during
+            hotkey press) to avoid synthetic keystroke conflicts.
+
     Returns captured context string (may be empty).
     """
     try:
@@ -52,7 +58,10 @@ def get_context() -> str:
     except Exception as e:
         logger.warning("UIAutomation context capture failed: %s", e)
 
-    return _get_context_fallback()
+    if use_fallback:
+        return _get_context_fallback()
+    logger.debug("Skipping keyboard fallback (modifiers held)")
+    return ""
 
 
 def _get_context_fallback() -> str:

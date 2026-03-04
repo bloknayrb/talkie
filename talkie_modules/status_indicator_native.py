@@ -2,6 +2,10 @@
 
 Replaces the Tkinter-based indicator with a pure Win32 layered window
 using ctypes. No Tkinter dependency — animation runs in its own daemon thread.
+
+Thread safety: the animation thread OWNS the window. All Win32 window calls
+(CreateWindowExW, ShowWindow, DestroyWindow, etc.) happen on that thread.
+Other threads communicate via a pending-action flag + threading.Event.
 """
 
 import ctypes
@@ -29,7 +33,7 @@ SW_HIDE = 0
 SWP_NOMOVE = 0x0002
 SWP_NOSIZE = 0x0001
 SWP_NOACTIVATE = 0x0010
-HWND_TOPMOST = -1
+HWND_TOPMOST = ctypes.wintypes.HWND(-1)  # Must be pointer-sized on 64-bit
 AC_SRC_OVER = 0x00
 AC_SRC_ALPHA = 0x01
 ULW_ALPHA = 0x02
@@ -39,11 +43,91 @@ user32 = ctypes.windll.user32
 gdi32 = ctypes.windll.gdi32
 kernel32 = ctypes.windll.kernel32
 
-# Set argtypes for DefWindowProcW to handle large LPARAM values on 64-bit
+# ---------------------------------------------------------------------------
+# Win32 argtypes / restype — required on 64-bit to avoid pointer truncation
+# ---------------------------------------------------------------------------
+
+# Window management
+user32.RegisterClassW.argtypes = [ctypes.c_void_p]
+user32.RegisterClassW.restype = ctypes.wintypes.ATOM
+
+user32.CreateWindowExW.argtypes = [
+    ctypes.wintypes.DWORD, ctypes.wintypes.LPCWSTR, ctypes.wintypes.LPCWSTR,
+    ctypes.wintypes.DWORD, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+    ctypes.wintypes.HWND, ctypes.wintypes.HMENU, ctypes.wintypes.HINSTANCE,
+    ctypes.wintypes.LPVOID,
+]
+user32.CreateWindowExW.restype = ctypes.wintypes.HWND
+
+user32.DestroyWindow.argtypes = [ctypes.wintypes.HWND]
+user32.DestroyWindow.restype = ctypes.wintypes.BOOL
+
+user32.ShowWindow.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]
+user32.ShowWindow.restype = ctypes.wintypes.BOOL
+
+user32.SetWindowPos.argtypes = [
+    ctypes.wintypes.HWND, ctypes.wintypes.HWND,
+    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+    ctypes.c_uint,
+]
+user32.SetWindowPos.restype = ctypes.wintypes.BOOL
+
+# Message pump
+user32.PeekMessageW.argtypes = [
+    ctypes.POINTER(ctypes.wintypes.MSG), ctypes.wintypes.HWND,
+    ctypes.c_uint, ctypes.c_uint, ctypes.c_uint,
+]
+user32.PeekMessageW.restype = ctypes.wintypes.BOOL
+
+user32.TranslateMessage.argtypes = [ctypes.POINTER(ctypes.wintypes.MSG)]
+user32.TranslateMessage.restype = ctypes.wintypes.BOOL
+
+user32.DispatchMessageW.argtypes = [ctypes.POINTER(ctypes.wintypes.MSG)]
+user32.DispatchMessageW.restype = ctypes.wintypes.LONG
+
+# DefWindowProcW — handle large LPARAM values on 64-bit
 user32.DefWindowProcW.argtypes = [
     ctypes.wintypes.HWND, ctypes.c_uint, ctypes.wintypes.WPARAM, ctypes.wintypes.LPARAM,
 ]
 user32.DefWindowProcW.restype = ctypes.c_long
+
+# Cursor and DC
+user32.GetCursorPos.argtypes = [ctypes.POINTER(ctypes.wintypes.POINT)]
+user32.GetCursorPos.restype = ctypes.wintypes.BOOL
+
+user32.GetDC.argtypes = [ctypes.wintypes.HWND]
+user32.GetDC.restype = ctypes.wintypes.HDC
+
+user32.ReleaseDC.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.HDC]
+user32.ReleaseDC.restype = ctypes.c_int
+
+# UpdateLayeredWindow
+user32.UpdateLayeredWindow.argtypes = [
+    ctypes.wintypes.HWND, ctypes.wintypes.HDC,
+    ctypes.POINTER(ctypes.wintypes.POINT), ctypes.POINTER(ctypes.wintypes.SIZE),
+    ctypes.wintypes.HDC, ctypes.POINTER(ctypes.wintypes.POINT),
+    ctypes.wintypes.COLORREF, ctypes.c_void_p, ctypes.wintypes.DWORD,
+]
+user32.UpdateLayeredWindow.restype = ctypes.wintypes.BOOL
+
+# GDI
+gdi32.CreateCompatibleDC.argtypes = [ctypes.wintypes.HDC]
+gdi32.CreateCompatibleDC.restype = ctypes.wintypes.HDC
+
+gdi32.CreateDIBSection.argtypes = [
+    ctypes.wintypes.HDC, ctypes.c_void_p, ctypes.c_uint,
+    ctypes.POINTER(ctypes.c_void_p), ctypes.wintypes.HANDLE, ctypes.wintypes.DWORD,
+]
+gdi32.CreateDIBSection.restype = ctypes.wintypes.HBITMAP
+
+gdi32.SelectObject.argtypes = [ctypes.wintypes.HDC, ctypes.wintypes.HGDIOBJ]
+gdi32.SelectObject.restype = ctypes.wintypes.HGDIOBJ
+
+gdi32.DeleteObject.argtypes = [ctypes.wintypes.HGDIOBJ]
+gdi32.DeleteObject.restype = ctypes.wintypes.BOOL
+
+gdi32.DeleteDC.argtypes = [ctypes.wintypes.HDC]
+gdi32.DeleteDC.restype = ctypes.wintypes.BOOL
 
 # Win32 callback type for window procedures
 WNDPROC = ctypes.WINFUNCTYPE(
@@ -139,11 +223,16 @@ class NativeStatusIndicator:
         self._state_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
-        self._create_window()
+        # Pending action flag — read by animation thread, set by any thread
+        self._pending_action: Optional[str] = None  # "show" or "hide"
+
+        # Window creation happens on the animation thread; wait for it
+        self._window_ready = threading.Event()
         self._start_thread()
+        self._window_ready.wait(timeout=1.0)
 
     def _create_window(self) -> None:
-        """Create a layered Win32 window."""
+        """Create a layered Win32 window. MUST be called on the animation thread."""
         wc_name = "TalkieIndicator"
 
         # Must keep the callback alive as an instance attribute to prevent GC
@@ -184,37 +273,75 @@ class NativeStatusIndicator:
         )
 
         if not self._hwnd:
-            logger.error("Failed to create native indicator window")
+            logger.error("Failed to create native indicator window (error %d)",
+                         kernel32.GetLastError())
+        else:
+            logger.info("Created indicator window: HWND=%#x", self._hwnd)
 
     def _start_thread(self) -> None:
         """Start the animation daemon thread."""
         self._thread = threading.Thread(target=self._animation_loop, daemon=True)
         self._thread.start()
 
+    def _pump_messages(self) -> None:
+        """Drain the Win32 message queue for our window."""
+        msg = ctypes.wintypes.MSG()
+        while user32.PeekMessageW(ctypes.byref(msg), self._hwnd, 0, 0, 0x0001):
+            user32.TranslateMessage(ctypes.byref(msg))
+            user32.DispatchMessageW(ctypes.byref(msg))
+
     def _animation_loop(self) -> None:
-        """Main animation loop running at ~30 FPS when visible."""
-        while not self._stop_event.is_set():
-            # Wait until there's something to animate
-            self._state_event.wait(timeout=0.1)
+        """Main animation loop — owns the window, runs at ~30 FPS when visible."""
+        # Create window on THIS thread so we own it
+        self._create_window()
+        self._window_ready.set()
 
-            with self._lock:
-                mode = self._anim_mode
-                visible = self._visible
+        try:
+            while not self._stop_event.is_set():
+                self._pump_messages()
 
-            if not visible or mode == "none":
-                self._state_event.clear()
-                continue
+                # Read and clear pending action under lock
+                with self._lock:
+                    action = self._pending_action
+                    self._pending_action = None
 
-            frame = self._render_frame()
-            if frame is not None:
-                self._update_layered_window(frame)
-            else:
-                # Animation complete — hide
-                self._do_hide()
-                self._state_event.clear()
-                continue
+                # Execute Win32 window calls OUTSIDE the lock
+                if action == "show" and self._hwnd:
+                    result = user32.ShowWindow(self._hwnd, SW_SHOWNOACTIVATE)
+                    logger.debug("ShowWindow result: %d", result)
+                    user32.SetWindowPos(
+                        self._hwnd, HWND_TOPMOST,
+                        0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                    )
+                elif action == "hide" and self._hwnd:
+                    user32.ShowWindow(self._hwnd, SW_HIDE)
 
-            time.sleep(self._FRAME_INTERVAL)
+                with self._lock:
+                    mode = self._anim_mode
+                    visible = self._visible
+
+                if not visible or mode == "none":
+                    self._state_event.wait(timeout=0.1)
+                    self._state_event.clear()
+                    continue
+
+                frame = self._render_frame()
+                if frame is not None:
+                    self._update_layered_window(frame)
+                else:
+                    # Animation complete — hide
+                    with self._lock:
+                        self._pending_action = "hide"
+                        self._visible = False
+                        self._anim_mode = "none"
+                    continue
+
+                time.sleep(self._FRAME_INTERVAL)
+        finally:
+            if self._hwnd:
+                user32.DestroyWindow(self._hwnd)
+                self._hwnd = 0
 
     def _render_frame(self) -> Optional[Image.Image]:
         """Render the current animation frame. Returns None if animation is done."""
@@ -402,23 +529,16 @@ class NativeStatusIndicator:
         user32.ReleaseDC(0, hdc_screen)
 
     def _do_show(self) -> None:
-        """Show the window (non-activating)."""
-        if self._hwnd:
-            user32.ShowWindow(self._hwnd, SW_SHOWNOACTIVATE)
-            user32.SetWindowPos(
-                self._hwnd, HWND_TOPMOST,
-                0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-            )
+        """Request the animation thread to show the window."""
         with self._lock:
+            self._pending_action = "show"
             self._visible = True
         self._state_event.set()
 
     def _do_hide(self) -> None:
-        """Hide the window."""
-        if self._hwnd:
-            user32.ShowWindow(self._hwnd, SW_HIDE)
+        """Request the animation thread to hide the window."""
         with self._lock:
+            self._pending_action = "hide"
             self._visible = False
             self._anim_mode = "none"
 
@@ -471,10 +591,4 @@ class NativeStatusIndicator:
         self._state_event.set()  # Wake up thread so it can exit
         if self._thread:
             self._thread.join(timeout=2.0)
-        self._do_hide()
-        if self._hwnd:
-            try:
-                user32.DestroyWindow(self._hwnd)
-            except Exception:
-                pass
-            self._hwnd = 0
+        # DestroyWindow is called in _animation_loop's finally block

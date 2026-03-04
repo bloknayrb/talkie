@@ -137,9 +137,9 @@ class TalkieApp:
         logger.info("Holding hotkey...")
         self._show_indicator(AppState.RECORDING)
         self._press_time = time.time()
-        self._pending_hwnd = get_target_hwnd()
-        self._pending_context = get_context()
-        start_recording()
+        self._pending_hwnd = get_target_hwnd()     # Fast — one Win32 call
+        start_recording()                           # Chime plays immediately
+        self._pending_context = get_context(use_fallback=False)  # Slow, but recording already active
 
     def on_release(self) -> None:
         if not self.state.transition(AppState.RECORDING, AppState.PROCESSING):

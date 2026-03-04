@@ -145,6 +145,37 @@ def get_api_key(key_name: str) -> str:
     return _get_key_from_keyring(key_name)
 
 
+def get_missing_keys(config: dict[str, Any]) -> list[str]:
+    """
+    Check which required API keys are missing for the current provider configuration.
+    Returns a list of human-readable descriptions of missing keys.
+    """
+    missing: list[str] = []
+    # Map providers to the keyring key name they require
+    stt_provider = config.get("stt_provider", "openai")
+    llm_provider = config.get("api_provider", "openai")
+
+    provider_key_map = {
+        "openai": "openai_key",
+        "groq": "groq_key",
+        "anthropic": "anthropic_key",
+    }
+
+    stt_key_name = provider_key_map.get(stt_provider)
+    llm_key_name = provider_key_map.get(llm_provider)
+
+    if stt_key_name and not get_api_key(stt_key_name):
+        missing.append(f"STT ({stt_provider})")
+
+    if llm_key_name and not get_api_key(llm_key_name):
+        # Avoid duplicate if same provider
+        label = f"LLM ({llm_provider})"
+        if label not in [m for m in missing]:
+            missing.append(label)
+
+    return missing
+
+
 def validate_api_key_format(key_name: str, value: str) -> Optional[str]:
     """
     Quick format validation for API keys.

@@ -1,6 +1,8 @@
 """Audio recording and playback for Talkie."""
 
 import os
+import queue
+import threading
 from typing import Optional
 
 import numpy as np
@@ -67,10 +69,8 @@ def compute_rms(audio: npt.NDArray) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Module-level recording state (will be replaced by AudioRecorder in Phase 2)
+# Module-level recording state
 # ---------------------------------------------------------------------------
-import threading
-import queue
 
 _recording: bool = False
 _audio_queue: queue.Queue = queue.Queue()
@@ -130,4 +130,4 @@ def stop_recording() -> Optional[npt.NDArray]:
         return audio
 
     logger.info("Recording stopped: no audio captured")
-    return np.array([])
+    return None

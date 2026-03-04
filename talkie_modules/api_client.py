@@ -158,38 +158,46 @@ def process_text_llm(transcription: str, context: str, config: dict[str, Any]) -
 # Error wrapping
 # ---------------------------------------------------------------------------
 
+def test_connection(provider: str, api_key: str) -> None:
+    """Test an API connection. Raises on failure."""
+    if provider in ("openai", "groq"):
+        client = _get_openai_client(api_key) if provider == "openai" else _get_groq_client(api_key)
+        client.models.list()
+    elif provider == "anthropic":
+        client = _get_anthropic_client(api_key)
+        client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1,
+            messages=[{"role": "user", "content": "hi"}],
+        )
+
+
 def _wrap_api_error(error: Exception, provider: str, operation: str) -> TalkieAPIError:
     """Convert SDK exceptions into user-friendly TalkieAPIError messages."""
     error_type = type(error).__name__
     msg = str(error)
 
     # OpenAI/Groq SDK errors
-    try:
-        import openai
-        if isinstance(error, openai.AuthenticationError):
-            return TalkieAPIError(f"Invalid {provider} API key", provider, error)
-        if isinstance(error, openai.APITimeoutError):
-            return TalkieAPIError(f"{provider} {operation} request timed out", provider, error)
-        if isinstance(error, openai.APIConnectionError):
-            return TalkieAPIError(f"Cannot connect to {provider} — check your network", provider, error)
-        if isinstance(error, openai.RateLimitError):
-            return TalkieAPIError(f"{provider} rate limit exceeded — try again shortly", provider, error)
-    except ImportError:
-        pass
+    import openai
+    if isinstance(error, openai.AuthenticationError):
+        return TalkieAPIError(f"Invalid {provider} API key", provider, error)
+    if isinstance(error, openai.APITimeoutError):
+        return TalkieAPIError(f"{provider} {operation} request timed out", provider, error)
+    if isinstance(error, openai.APIConnectionError):
+        return TalkieAPIError(f"Cannot connect to {provider} — check your network", provider, error)
+    if isinstance(error, openai.RateLimitError):
+        return TalkieAPIError(f"{provider} rate limit exceeded — try again shortly", provider, error)
 
     # Anthropic SDK errors
-    try:
-        import anthropic
-        if isinstance(error, anthropic.AuthenticationError):
-            return TalkieAPIError(f"Invalid {provider} API key", provider, error)
-        if isinstance(error, anthropic.APITimeoutError):
-            return TalkieAPIError(f"{provider} {operation} request timed out", provider, error)
-        if isinstance(error, anthropic.APIConnectionError):
-            return TalkieAPIError(f"Cannot connect to {provider} — check your network", provider, error)
-        if isinstance(error, anthropic.RateLimitError):
-            return TalkieAPIError(f"{provider} rate limit exceeded — try again shortly", provider, error)
-    except ImportError:
-        pass
+    import anthropic
+    if isinstance(error, anthropic.AuthenticationError):
+        return TalkieAPIError(f"Invalid {provider} API key", provider, error)
+    if isinstance(error, anthropic.APITimeoutError):
+        return TalkieAPIError(f"{provider} {operation} request timed out", provider, error)
+    if isinstance(error, anthropic.APIConnectionError):
+        return TalkieAPIError(f"Cannot connect to {provider} — check your network", provider, error)
+    if isinstance(error, anthropic.RateLimitError):
+        return TalkieAPIError(f"{provider} rate limit exceeded — try again shortly", provider, error)
 
     # Fallback
     logger.error("%s %s error (%s): %s", provider, operation, error_type, msg)

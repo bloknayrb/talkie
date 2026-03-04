@@ -102,11 +102,7 @@ class SettingsUI(ctk.CTk):
         api_key = key_entry.get()
 
         # Format validation first
-        key_name = f"{provider}_key" if provider != "anthropic" else "anthropic_key"
-        if provider == "openai":
-            key_name = "openai_key"
-        elif provider == "groq":
-            key_name = "groq_key"
+        key_name = f"{provider}_key"
 
         format_error = validate_api_key_format(key_name, api_key)
         if format_error:
@@ -115,29 +111,9 @@ class SettingsUI(ctk.CTk):
 
         def _run_test() -> None:
             try:
-                if provider in ("openai", "groq"):
-                    import openai
-                    if provider == "openai":
-                        client = openai.OpenAI(api_key=api_key, timeout=10)
-                    else:
-                        client = openai.OpenAI(
-                            api_key=api_key,
-                            base_url="https://api.groq.com/openai/v1",
-                            timeout=10,
-                        )
-                    # Lightweight test — list models
-                    client.models.list()
-                    self.after(0, lambda: self._show_test_result(True, f"{provider} connection OK"))
-                elif provider == "anthropic":
-                    import anthropic
-                    client = anthropic.Anthropic(api_key=api_key, timeout=10)
-                    # Send a minimal message to verify auth
-                    client.messages.create(
-                        model="claude-haiku-4-5-20251001",
-                        max_tokens=1,
-                        messages=[{"role": "user", "content": "hi"}],
-                    )
-                    self.after(0, lambda: self._show_test_result(True, "Anthropic connection OK"))
+                from talkie_modules.api_client import test_connection
+                test_connection(provider, api_key)
+                self.after(0, lambda: self._show_test_result(True, f"{provider} connection OK"))
             except Exception as e:
                 error_msg = str(e)[:80]
                 self.after(0, lambda: self._show_test_result(False, error_msg))

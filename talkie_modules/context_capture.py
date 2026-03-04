@@ -1,7 +1,6 @@
 """Capture text context around the cursor for Talkie."""
 
 import time
-from typing import Optional
 
 import pyautogui
 import pyperclip

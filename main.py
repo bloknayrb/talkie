@@ -61,8 +61,6 @@ class TalkieApp:
         self.state: StateMachine = StateMachine()
         self._indicator: Optional[NativeStatusIndicator] = None
         self._settings_server: Optional[SettingsServer] = None
-        self._webview_window = None
-        self._hidden_window = None
         self._pending_context: str = ""
         self._pending_hwnd: int = 0
         self._press_time: float = 0.0
@@ -121,41 +119,11 @@ class TalkieApp:
             logger.warning("Could not open log file: %s", e)
 
     def show_settings(self, icon: object = None, item: object = None) -> None:
-        """Open the settings window via pywebview.
+        """Open settings in the default browser (Syncthing/qBittorrent pattern)."""
+        import webbrowser
 
-        pywebview requires the main thread for its COM event loop (EdgeChromium).
-        We call create_window() which works because webview.start() is running
-        on the main thread. New windows are created within the existing event loop.
-        """
-        import webview
-
-        if self._webview_window is not None:
-            try:
-                self._webview_window.restore()
-                return
-            except Exception:
-                self._webview_window = None
-
-        if not self._settings_server:
-            return
-
-        url = self._settings_server.url
-        try:
-            self._webview_window = webview.create_window(
-                "Talkie Settings",
-                url,
-                width=700,
-                height=550,
-                resizable=True,
-                min_size=(600, 450),
-            )
-            self._webview_window.events.closed += self._on_settings_closed
-        except Exception as e:
-            logger.error("Settings window error: %s", e)
-            self._webview_window = None
-
-    def _on_settings_closed(self) -> None:
-        self._webview_window = None
+        if self._settings_server:
+            webbrowser.open(self._settings_server.url)
 
     def _show_indicator(self, new_state: AppState, success: bool = False) -> None:
         """Thread-safe indicator update — native indicator handles threading internally."""
@@ -254,24 +222,10 @@ class TalkieApp:
             self._settings_server.stop()
         if self.tray_icon:
             self.tray_icon.stop()
-
-        # Destroy all pywebview windows — this causes webview.start() to return
-        try:
-            import webview
-            for win in webview.windows[:]:
-                try:
-                    win.destroy()
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        # Schedule fallback exit in case webview.start() doesn't return cleanly
-        threading.Timer(2.0, lambda: os._exit(0)).start()
+        # Schedule fallback exit in case threads don't die cleanly
+        threading.Timer(1.0, lambda: os._exit(0)).start()
 
     def run(self) -> None:
-        import webview
-
         # 1. Start hotkey listener
         self.hotkey_manager = HotkeyManager(
             self.config.get("hotkey", "ctrl+win"), self.on_press, self.on_release
@@ -292,37 +246,20 @@ class TalkieApp:
         # 4. Create the native Win32 status indicator
         self._indicator = NativeStatusIndicator()
 
-        # 5. First-run: auto-open Settings if API keys are missing
+        # 5. First-run: auto-open Settings in browser if API keys are missing
         missing = get_missing_keys(self.config)
         if missing:
             logger.info("Missing API keys: %s — opening settings", missing)
-            self._webview_window = webview.create_window(
-                "Talkie Settings",
-                self._settings_server.url,
-                width=700,
-                height=550,
-                resizable=True,
-                min_size=(600, 450),
-            )
-            self._webview_window.events.closed += self._on_settings_closed
-        else:
-            # Create a hidden window so webview.start() has something to run
-            # This keeps the main thread in the pywebview event loop
-            self._hidden_window = webview.create_window(
-                "Talkie",
-                html="<html></html>",
-                hidden=True,
-                width=1,
-                height=1,
-            )
+            threading.Timer(1.0, self.show_settings).start()
 
         logger.info("Talkie v%s is running.", __version__)
 
-        # 6. Run pywebview event loop on main thread (required for COM/STA).
-        # This blocks until all windows are closed, but we keep a hidden window
-        # alive so the loop persists. show_settings() creates new windows within
-        # this loop. quit_app() calls webview.destroy() to exit.
-        webview.start(private_mode=False)
+        # 6. Keep main thread alive (everything runs in daemon threads)
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            self.quit_app()
 
 
 if __name__ == "__main__":

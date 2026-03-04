@@ -5,7 +5,6 @@ keyboard>=0.13.5
 pyautogui>=0.9.54
 pyperclip>=1.8.2
 bottle>=0.12
-pywebview>=5.0
 pystray>=0.19.4
 Pillow>=10.0.0
 python-dotenv>=1.0.0

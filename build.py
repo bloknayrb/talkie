@@ -54,11 +54,9 @@ PyInstaller.__main__.run([
     "--collect-all=talkie_modules",
     "--collect-all=keyring",
     "--collect-all=bottle",
-    "--collect-all=webview",
     "--hidden-import=keyring.backends.Windows",
     "--hidden-import=dotenv",
     "--hidden-import=bottle",
-    "--hidden-import=webview",
     "--clean",
     *exclude_args,
 ])

@@ -4,14 +4,18 @@ Talkie is a local, Windows-based dictation utility designed to be a lightweight 
 
 ## Features
 
-- **Hold-to-Talk Interaction**: Global hotkey (default: `alt+space`) allows for instant dictation.
+- **Hold-to-Talk Interaction**: Global hotkey (default: `ctrl+win`) allows for instant dictation.
+- **Near-Cursor Visual Feedback**: Floating indicator near your cursor shows recording (red), processing (blue), and success (green) — no need to look at the system tray.
 - **Context Awareness**: Automatically captures surrounding text to ensure perfect capitalization and spacing.
 - **Multi-Provider Support**: Supports OpenAI (Whisper), Groq (Whisper-v3), and Anthropic (Claude) for STT and LLM processing.
-- **Custom Snippets**: Define short abbreviations that expand into full text (e.g., `br` -> `Best regards`).
+- **Model Selection**: Choose STT and LLM models directly from Settings — no config file editing needed.
+- **Custom Snippets**: Define short abbreviations that expand into full text via a structured editor (e.g., `br` -> `Best regards`).
 - **Custom Vocabulary**: Ensure specific names, brands, or technical terms are always spelled correctly.
-- **Audio Feedback**: Subtle synthetic chimes indicate when recording starts, stops, or fails.
+- **Audio Feedback**: Subtle synthetic chimes for recording start/stop, discarded recordings, and errors.
+- **First-Run Guidance**: Auto-opens Settings with a guidance message when API keys are missing.
 - **Secure Key Storage**: API keys stored in Windows Credential Manager, never in config files.
-- **Error Notifications**: Windows toast notifications for pipeline errors instead of silent failures.
+- **Error Notifications**: Windows toast notifications for pipeline errors and discarded recordings.
+- **Single Instance**: Only one copy can run at a time — prevents duplicate hotkey hooks.
 - **Portable Executable**: Run as a single `.exe` with no installation or admin rights required.
 
 ## Getting Started
@@ -22,9 +26,9 @@ Download `Talkie.exe` from the latest [Release](https://github.com/bloknayrb/tal
 
 ### Configure API Keys
 
-Right-click the system tray icon, select **Settings**, enter your API keys, and click **Save Config**. Keys are stored securely in Windows Credential Manager.
+On first launch, Talkie will automatically open Settings if no API keys are configured. Enter your keys and click **Save Config**. Keys are stored securely in Windows Credential Manager.
 
-You can also set keys via environment variables (`OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`) or a `.env` file.
+You can also right-click the tray icon and select **Settings** at any time, or set keys via environment variables (`OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`) or a `.env` file.
 
 ### Start Dictating
 
@@ -89,12 +93,15 @@ talkie_modules/
     hotkey_manager.py            # Global key hold/release listener
     text_injector.py             # Pastes processed text via clipboard
     settings_ui.py               # CustomTkinter settings interface
+    status_indicator.py          # Near-cursor floating state indicator
     notifications.py             # Windows toast notifications and error chimes
 tests/
     test_state.py                # State machine transitions and thread safety
     test_config_manager.py       # Config merging and API key validation
     test_api_client.py           # Mocked STT/LLM API calls
     test_audio_io.py             # Tone generation and asset management
+    test_text_injector.py        # Focus restoration and text injection
+    test_context_stripping.py    # Prior-injection removal from context
 ```
 
 ## License

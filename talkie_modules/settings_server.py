@@ -4,7 +4,6 @@ Runs on a daemon thread, serving the settings SPA and handling config API calls.
 Binds to 127.0.0.1:0 (OS-assigned port) to avoid conflicts.
 """
 
-import json
 import os
 import threading
 from typing import Any, Optional
@@ -44,6 +43,32 @@ _KEY_PREFIXES = {
 
 _KEY_NAMES = ("openai_key", "groq_key", "anthropic_key")
 
+_VALID_PROVIDERS = frozenset(_STT_MODELS) | frozenset(_LLM_MODELS)
+_VALID_STT_PROVIDERS = frozenset(_STT_MODELS)
+_VALID_LLM_PROVIDERS = frozenset(_LLM_MODELS)
+
+_NUMERIC_VALIDATORS = {
+    "temperature": (float, 0.0, 2.0),
+    "min_hold_seconds": (float, 0.2, 3.0),
+    "silence_rms_threshold": (float, 0.001, 0.1),
+}
+
+
+def _safe_error_message(error: Exception) -> str:
+    """Extract a user-safe error description from API exceptions."""
+    status = getattr(error, "status_code", None)
+    if status == 401:
+        return "Authentication failed — check your API key"
+    if status == 403:
+        return "Access denied — check your API key permissions"
+    if status == 429:
+        return "Rate limited — try again shortly"
+    if status:
+        return f"API error (HTTP {status})"
+    if isinstance(error, (ConnectionError, TimeoutError)):
+        return "Connection failed — check your network"
+    return "Connection test failed"
+
 
 def _mask_key(key_name: str, value: str) -> str:
     """Mask an API key for display. Returns 'sk-...xxxx' style."""
@@ -67,6 +92,10 @@ def create_app(
         get_version: Callable returning version string
     """
     app = bottle.Bottle()
+
+    def _require_valid_provider(provider):
+        if provider not in _VALID_PROVIDERS:
+            bottle.abort(400, f"Unknown provider: {provider!r}")
 
     # Directory containing web_ui assets
     web_ui_dir = os.path.join(os.path.dirname(__file__), "web_ui")
@@ -102,11 +131,30 @@ def create_app(
 
             config = load_config()
 
-            # Update simple fields
-            for field in ("stt_provider", "api_provider", "hotkey",
-                          "min_hold_seconds", "silence_rms_threshold",
-                          "custom_vocabulary", "snippets", "system_prompt",
-                          "temperature", "log_level"):
+            # Validate and update provider fields
+            if "stt_provider" in data:
+                if data["stt_provider"] not in _VALID_STT_PROVIDERS:
+                    bottle.abort(400, f"Unknown STT provider: {data['stt_provider']!r}")
+                config["stt_provider"] = data["stt_provider"]
+            if "api_provider" in data:
+                if data["api_provider"] not in _VALID_LLM_PROVIDERS:
+                    bottle.abort(400, f"Unknown LLM provider: {data['api_provider']!r}")
+                config["api_provider"] = data["api_provider"]
+
+            # Validate and update numeric fields
+            for field, (typ, lo, hi) in _NUMERIC_VALIDATORS.items():
+                if field in data:
+                    try:
+                        val = typ(data[field])
+                    except (TypeError, ValueError):
+                        bottle.abort(400, f"{field} must be a number")
+                    if not (lo <= val <= hi):
+                        bottle.abort(400, f"{field} must be between {lo} and {hi}")
+                    config[field] = val
+
+            # Passthrough fields (no meaningful server-side constraints)
+            for field in ("hotkey", "custom_vocabulary", "snippets",
+                          "system_prompt", "log_level"):
                 if field in data:
                     config[field] = data[field]
 
@@ -124,18 +172,20 @@ def create_app(
             return {"status": "ok"}
         except Exception as e:
             logger.error("Config save failed: %s", e)
-            bottle.abort(500, str(e))
+            bottle.abort(500, "Failed to save configuration")
 
     # ---- API Keys ----
 
     @app.route("/api/keys/<provider>", method="GET")
     def get_key_status(provider):
+        _require_valid_provider(provider)
         key_name = f"{provider}_key"
         value = get_api_key(key_name)
         return {"exists": bool(value), "masked": _mask_key(key_name, value)}
 
     @app.route("/api/keys/<provider>", method="POST")
     def save_key(provider):
+        _require_valid_provider(provider)
         key_name = f"{provider}_key"
         data = bottle.request.json
         if not data or "key" not in data:
@@ -163,6 +213,7 @@ def create_app(
             bottle.abort(400, "No JSON body")
 
         provider = data.get("provider", "")
+        _require_valid_provider(provider)
         key_name = f"{provider}_key"
         api_key = data.get("key") or get_api_key(key_name)
 
@@ -178,7 +229,8 @@ def create_app(
             _test(provider, api_key)
             return {"status": "ok", "message": f"{provider}: connected"}
         except Exception as e:
-            return {"status": "error", "message": str(e)[:100]}
+            logger.warning("Connection test failed for %s: %s", provider, e)
+            return {"status": "error", "message": _safe_error_message(e)}
 
     # ---- Hotkey Recording ----
     # Uses polling: POST starts recording, GET checks result

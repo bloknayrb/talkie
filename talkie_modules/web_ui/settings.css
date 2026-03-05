@@ -335,6 +335,18 @@ kbd {
     min-width: 80px;
 }
 
+.key-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 11px;
+    font-weight: 400;
+    margin-left: 4px;
+}
+
+.key-link:hover {
+    text-decoration: underline;
+}
+
 .key-status.ok { color: var(--success); }
 .key-status.error { color: var(--error); }
 .key-status.testing { color: var(--warning); }

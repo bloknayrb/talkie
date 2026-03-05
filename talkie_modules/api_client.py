@@ -97,7 +97,8 @@ def process_text_llm(transcription: str, context: str, config: dict[str, Any]) -
     snippets_str = ", ".join(
         [f"'{k}' to '{v}'" for k, v in config.get("snippets", {}).items()]
     )
-    system_prompt = config.get("system_prompt", "").format(snippets=snippets_str)
+    system_prompt = config.get("system_prompt", "").replace("{snippets}", snippets_str)
+    temperature = config.get("temperature", 0)
 
     user_prompt = (
         f"<previous_context>{context}</previous_context>\n\n"
@@ -123,7 +124,7 @@ def process_text_llm(transcription: str, context: str, config: dict[str, Any]) -
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=0,
+                temperature=temperature,
             )
             result = response.choices[0].message.content.strip()
             logger.info("LLM response: %d chars", len(result))
@@ -142,7 +143,7 @@ def process_text_llm(transcription: str, context: str, config: dict[str, Any]) -
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_prompt}],
                 max_tokens=1024,
-                temperature=0,
+                temperature=temperature,
             )
             result = response.content[0].text.strip()
             logger.info("LLM response: %d chars", len(result))

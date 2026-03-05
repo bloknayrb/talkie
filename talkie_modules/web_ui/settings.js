@@ -3,6 +3,15 @@
 let config = {};
 let models = { stt: {}, llm: {} };
 
+// Must match DEFAULT_CONFIG["system_prompt"] in config_manager.py
+const DEFAULT_SYSTEM_PROMPT =
+    'You are an expert transcriber. Transcribe the following audio based on the ' +
+    'provided <previous_context>. If the context ends mid-sentence, continue it ' +
+    'logically with appropriate capitalization and spacing. If context ends with a ' +
+    'period, start the next sentence with an uppercase letter. Remove filler words, ' +
+    'self-corrections, and apply custom vocabulary spellings. Expand the following ' +
+    'snippets: {snippets}. Output ONLY the final processed text.';
+
 // ---- Navigation ----
 
 document.querySelectorAll('.nav-item').forEach(item => {
@@ -63,6 +72,12 @@ function populateUI() {
     // Vocabulary
     const vocab = config.custom_vocabulary || [];
     document.getElementById('vocab-text').value = vocab.join(', ');
+
+    // System Prompt
+    document.getElementById('system-prompt-text').value = config.system_prompt || DEFAULT_SYSTEM_PROMPT;
+    const temp = config.temperature !== undefined ? config.temperature : 0;
+    document.getElementById('temperature').value = temp;
+    document.getElementById('temperature-value').textContent = parseFloat(temp).toFixed(1);
 
     // Quick Start badges
     updateQuickStartBadges();
@@ -303,6 +318,37 @@ document.getElementById('save-vocab').addEventListener('click', async () => {
     const text = document.getElementById('vocab-text').value;
     const words = text.split(',').map(w => w.trim()).filter(w => w);
     await api('POST', '/api/config', { custom_vocabulary: words });
+});
+
+// ---- System Prompt ----
+
+document.getElementById('save-prompt').addEventListener('click', async () => {
+    const text = document.getElementById('system-prompt-text').value;
+    const statusEl = document.getElementById('prompt-status');
+
+    if (!text.trim()) {
+        statusEl.textContent = 'Prompt cannot be empty';
+        statusEl.className = 'save-status error';
+        return;
+    }
+
+    const temperature = parseFloat(document.getElementById('temperature').value);
+    await api('POST', '/api/config', { system_prompt: text, temperature });
+    statusEl.textContent = 'Saved';
+    statusEl.className = 'save-status ok';
+    setTimeout(() => { statusEl.textContent = ''; }, 2000);
+});
+
+document.getElementById('reset-prompt').addEventListener('click', () => {
+    document.getElementById('system-prompt-text').value = DEFAULT_SYSTEM_PROMPT;
+    const statusEl = document.getElementById('prompt-status');
+    statusEl.textContent = 'Reset — click Save to apply';
+    statusEl.className = 'save-status';
+    setTimeout(() => { statusEl.textContent = ''; }, 3000);
+});
+
+document.getElementById('temperature').addEventListener('input', e => {
+    document.getElementById('temperature-value').textContent = parseFloat(e.target.value).toFixed(1);
 });
 
 // ---- Quick Start Badges ----

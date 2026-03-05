@@ -31,6 +31,9 @@
                 <li class="nav-item" data-section="vocabulary">
                     <span class="nav-icon">&#128218;</span> Vocabulary
                 </li>
+                <li class="nav-item" data-section="systemprompt">
+                    <span class="nav-icon">&#9998;</span> System Prompt
+                </li>
                 <li class="nav-item" data-section="about">
                     <span class="nav-icon">&#8505;</span> About
                 </li>
@@ -209,6 +212,27 @@
                 <p class="hint">Comma-separated words for improved transcription accuracy.</p>
                 <textarea id="vocab-text" rows="8" placeholder="Talkie, Wispr Flow, ..."></textarea>
                 <button class="btn btn-primary" id="save-vocab">Save Vocabulary</button>
+            </section>
+
+            <!-- System Prompt -->
+            <section id="systemprompt" class="section">
+                <h2>System Prompt</h2>
+                <label for="system-prompt-text" class="hint">Customize the LLM system prompt used to process your dictation.</label>
+                <p class="hint" id="prompt-hint">Your snippet expansions are automatically included so the AI recognizes your custom phrases. Use <code>{snippets}</code> to control where they appear in the prompt.</p>
+                <textarea id="system-prompt-text" rows="12" aria-describedby="prompt-hint"></textarea>
+                <div class="form-group" style="margin-top: 16px;">
+                    <div class="slider-row">
+                        <label>Temperature:</label>
+                        <input type="range" id="temperature" min="0" max="2.0" step="0.1">
+                        <span id="temperature-value">0.0</span>
+                    </div>
+                    <p class="hint">0 = deterministic (best for dictation), higher = more creative. Some providers cap at 1.0.</p>
+                </div>
+                <div class="prompt-actions">
+                    <button class="btn btn-primary" id="save-prompt">Save</button>
+                    <button class="btn" id="reset-prompt">Reset to Default</button>
+                    <span class="save-status" id="prompt-status"></span>
+                </div>
             </section>
 
             <!-- About -->

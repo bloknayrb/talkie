@@ -42,6 +42,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "groq_llm": "llama-3.3-70b-versatile",
         "anthropic_llm": "claude-sonnet-4-20250514",
     },
+    "temperature": 0,
     "log_level": "INFO",
 }
 

@@ -170,6 +170,8 @@ def create_app(
                 on_config_saved()
 
             return {"status": "ok"}
+        except bottle.HTTPError:
+            raise
         except Exception as e:
             logger.error("Config save failed: %s", e)
             bottle.abort(500, "Failed to save configuration")

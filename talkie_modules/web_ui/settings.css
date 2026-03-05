@@ -411,6 +411,25 @@ input[type="range"] {
 .save-status.ok { color: var(--success); }
 .save-status.error { color: var(--error); }
 
+/* System Prompt */
+
+.prompt-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.hint code {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 12px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    color: var(--accent);
+}
+
 /* About */
 
 .about-info {

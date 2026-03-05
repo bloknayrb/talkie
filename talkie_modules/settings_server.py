@@ -106,7 +106,7 @@ def create_app(
             for field in ("stt_provider", "api_provider", "hotkey",
                           "min_hold_seconds", "silence_rms_threshold",
                           "custom_vocabulary", "snippets", "system_prompt",
-                          "log_level"):
+                          "temperature", "log_level"):
                 if field in data:
                     config[field] = data[field]
 

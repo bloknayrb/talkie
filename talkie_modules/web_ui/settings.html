@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Talkie Settings</title>
+    <link rel="stylesheet" href="/static/settings.css">
+</head>
+<body>
+    <div class="app">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h1>Talkie</h1>
+            </div>
+            <ul class="nav-list">
+                <li class="nav-item active" data-section="quickstart">
+                    <span class="nav-icon">&#9889;</span> Quick Start
+                </li>
+                <li class="nav-item" data-section="providers">
+                    <span class="nav-icon">&#9881;</span> Providers
+                </li>
+                <li class="nav-item" data-section="apikeys">
+                    <span class="nav-icon">&#128273;</span> API Keys
+                </li>
+                <li class="nav-item" data-section="hotkey">
+                    <span class="nav-icon">&#9000;</span> Hotkey
+                </li>
+                <li class="nav-item" data-section="snippets">
+                    <span class="nav-icon">&#9999;</span> Snippets
+                </li>
+                <li class="nav-item" data-section="vocabulary">
+                    <span class="nav-icon">&#128218;</span> Vocabulary
+                </li>
+                <li class="nav-item" data-section="about">
+                    <span class="nav-icon">&#8505;</span> About
+                </li>
+            </ul>
+        </nav>
+
+        <main class="content">
+            <!-- Quick Start -->
+            <section id="quickstart" class="section active">
+                <h2>Quick Start</h2>
+                <div class="steps">
+                    <div class="step" id="step-providers">
+                        <div class="step-header">
+                            <span class="step-badge" id="badge-providers">1</span>
+                            <span class="step-title">Choose providers</span>
+                            <span class="step-status" id="status-providers"></span>
+                        </div>
+                        <div class="step-body">
+                            <div class="form-row">
+                                <label>STT:</label>
+                                <select id="qs-stt-provider">
+                                    <option value="openai">OpenAI</option>
+                                    <option value="groq">Groq</option>
+                                </select>
+                            </div>
+                            <div class="form-row">
+                                <label>LLM:</label>
+                                <select id="qs-llm-provider">
+                                    <option value="openai">OpenAI</option>
+                                    <option value="groq">Groq</option>
+                                    <option value="anthropic">Anthropic</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step" id="step-keys">
+                        <div class="step-header">
+                            <span class="step-badge" id="badge-keys">2</span>
+                            <span class="step-title">Add API keys</span>
+                            <span class="step-status" id="status-keys"></span>
+                        </div>
+                        <div class="step-body" id="qs-keys-body">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <div class="step" id="step-tryit">
+                        <div class="step-header">
+                            <span class="step-badge" id="badge-tryit">3</span>
+                            <span class="step-title">Try it out</span>
+                            <span class="step-status" id="status-tryit"></span>
+                        </div>
+                        <div class="step-body">
+                            <p class="hint">Hold <kbd id="qs-hotkey">Ctrl+Win</kbd> and speak. Release to process.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Providers -->
+            <section id="providers" class="section">
+                <h2>Providers</h2>
+                <div class="form-group">
+                    <div class="form-row">
+                        <label for="stt-provider">STT Provider:</label>
+                        <select id="stt-provider">
+                            <option value="openai">OpenAI</option>
+                            <option value="groq">Groq</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label for="stt-model">STT Model:</label>
+                        <select id="stt-model"></select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="form-row">
+                        <label for="llm-provider">LLM Provider:</label>
+                        <select id="llm-provider">
+                            <option value="openai">OpenAI</option>
+                            <option value="groq">Groq</option>
+                            <option value="anthropic">Anthropic</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label for="llm-model">LLM Model:</label>
+                        <select id="llm-model"></select>
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="save-providers">Save Providers</button>
+            </section>
+
+            <!-- API Keys -->
+            <section id="apikeys" class="section">
+                <h2>API Keys</h2>
+                <p class="hint">Keys are stored securely in Windows Credential Manager.</p>
+
+                <div class="key-group" id="key-openai">
+                    <div class="form-row">
+                        <label>OpenAI:</label>
+                        <input type="password" id="openai-key" placeholder="sk-..." autocomplete="off">
+                        <span class="key-status" id="openai-key-status"></span>
+                    </div>
+                    <div class="key-actions">
+                        <button class="btn btn-sm" onclick="testKey('openai')">Test</button>
+                        <button class="btn btn-sm btn-primary" onclick="saveKey('openai')">Save</button>
+                    </div>
+                </div>
+
+                <div class="key-group" id="key-groq">
+                    <div class="form-row">
+                        <label>Groq:</label>
+                        <input type="password" id="groq-key" placeholder="gsk_..." autocomplete="off">
+                        <span class="key-status" id="groq-key-status"></span>
+                    </div>
+                    <div class="key-actions">
+                        <button class="btn btn-sm" onclick="testKey('groq')">Test</button>
+                        <button class="btn btn-sm btn-primary" onclick="saveKey('groq')">Save</button>
+                    </div>
+                </div>
+
+                <div class="key-group" id="key-anthropic">
+                    <div class="form-row">
+                        <label>Anthropic:</label>
+                        <input type="password" id="anthropic-key" placeholder="sk-ant-..." autocomplete="off">
+                        <span class="key-status" id="anthropic-key-status"></span>
+                    </div>
+                    <div class="key-actions">
+                        <button class="btn btn-sm" onclick="testKey('anthropic')">Test</button>
+                        <button class="btn btn-sm btn-primary" onclick="saveKey('anthropic')">Save</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Hotkey -->
+            <section id="hotkey" class="section">
+                <h2>Hotkey</h2>
+                <div class="form-group">
+                    <div class="form-row">
+                        <label>Current Hotkey:</label>
+                        <input type="text" id="hotkey-display" readonly>
+                        <button class="btn btn-sm" id="record-hotkey-btn">Record</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="slider-row">
+                        <label>Min Hold Duration:</label>
+                        <input type="range" id="min-hold" min="0.2" max="3.0" step="0.1">
+                        <span id="min-hold-value">1.0s</span>
+                    </div>
+                    <div class="slider-row">
+                        <label>Silence Threshold:</label>
+                        <input type="range" id="silence-threshold" min="0.001" max="0.1" step="0.001">
+                        <span id="silence-value">0.005</span>
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="save-hotkey">Save Hotkey Settings</button>
+            </section>
+
+            <!-- Snippets -->
+            <section id="snippets" class="section">
+                <h2>Snippets</h2>
+                <p class="hint">Text expansion: when a trigger word is detected, it's replaced with the expansion.</p>
+                <div id="snippets-list"></div>
+                <button class="btn btn-sm" id="add-snippet">+ Add Snippet</button>
+                <div class="spacer"></div>
+                <button class="btn btn-primary" id="save-snippets">Save Snippets</button>
+                <span class="save-status" id="snippets-status"></span>
+            </section>
+
+            <!-- Vocabulary -->
+            <section id="vocabulary" class="section">
+                <h2>Custom Vocabulary</h2>
+                <p class="hint">Comma-separated words for improved transcription accuracy.</p>
+                <textarea id="vocab-text" rows="8" placeholder="Talkie, Wispr Flow, ..."></textarea>
+                <button class="btn btn-primary" id="save-vocab">Save Vocabulary</button>
+            </section>
+
+            <!-- About -->
+            <section id="about" class="section">
+                <h2>About Talkie</h2>
+                <div class="about-info">
+                    <p>Version: <span id="about-version">-</span></p>
+                    <p>Hold-to-talk voice dictation with LLM processing.</p>
+                    <p><a href="https://github.com/bloknayrb/talkie" target="_blank">GitHub Repository</a></p>
+                    <button class="btn btn-sm" id="open-log">Open Log File</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/settings.js"></script>
+</body>
+</html>

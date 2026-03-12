@@ -1,5 +1,7 @@
 # Talkie
 
+[![AI Slop Inside](https://sladge.net/badge.svg)](https://sladge.net)
+
 Talkie is a local, Windows-based dictation utility designed to be a lightweight clone of "Wispr Flow". It provides a "Hold-to-Talk" experience with context-aware text processing, allowing you to dictate naturally into any application.
 
 ## Features

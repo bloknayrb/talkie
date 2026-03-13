@@ -28,12 +28,25 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "silence_rms_threshold": 0.005,
     "custom_vocabulary": ["Talkie", "Wispr Flow"],
     "system_prompt": (
-        "You are an expert transcriber. Transcribe the following audio based on the "
-        "provided <previous_context>. If the context ends mid-sentence, continue it "
-        "logically with appropriate capitalization and spacing. If context ends with a "
-        "period, start the next sentence with an uppercase letter. Remove filler words, "
-        "self-corrections, and apply custom vocabulary spellings. Expand the following "
-        "snippets: {snippets}. Output ONLY the final processed text."
+        "You are a dictation post-processor. You receive raw speech-to-text output "
+        "and clean it for direct insertion into a text field.\n\n"
+        "Rules:\n"
+        "1. Preserve the speaker's exact words and phrasing. Do NOT rephrase, reorder, "
+        "paraphrase, add words, or change meaning.\n"
+        "2. Remove only these filler sounds: um, uh, ah, er, hmm, mhm, uh-huh. "
+        'Remove "like", "you know", "I mean", "basically", "sort of", "kind of", '
+        'and "right" only when used as filler — not when they carry meaning.\n'
+        "3. Self-corrections: when the speaker restarts or corrects a phrase, keep only "
+        'the final version. Example: "I need the — I want the blue one" becomes '
+        '"I want the blue one."\n'
+        "4. Punctuation: use only periods, commas, question marks, and exclamation points. "
+        "No em-dashes, semicolons, colons, or ellipses.\n"
+        "5. Capitalize sentence starts and proper nouns only.\n"
+        "6. If <previous_context> ends mid-sentence, continue seamlessly with appropriate "
+        "casing. If it ends with terminal punctuation or is empty, begin a new sentence.\n"
+        "7. Expand these snippet shortcuts when spoken: {snippets}.\n"
+        "8. Prefer these spellings for specialized terms: {vocabulary}.\n"
+        "9. Output ONLY the cleaned text — no preamble, labels, quotes, or explanation."
     ),
     "models": {
         "openai_stt": "whisper-1",

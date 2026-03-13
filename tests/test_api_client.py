@@ -68,11 +68,20 @@ class TestProcessTextLLM:
             "openai_key": "sk-test123456789012345",
             "models": {"openai_llm": "gpt-4o"},
             "snippets": {"gm": "Good morning"},
-            "system_prompt": "Test prompt {snippets}",
+            "custom_vocabulary": ["Talkie"],
+            "system_prompt": "Test prompt {snippets} {vocabulary}",
         }
 
         result = process_text_llm("hello world", "previous text", config)
         assert result == "Processed text"
+
+        # Verify both placeholders were substituted in the system prompt
+        call_args = mock_client.chat.completions.create.call_args
+        system_msg = call_args[1]["messages"][0]["content"]
+        assert "{snippets}" not in system_msg
+        assert "{vocabulary}" not in system_msg
+        assert "Talkie" in system_msg
+        assert "'gm' to 'Good morning'" in system_msg
 
     @patch("talkie_modules.api_client._get_anthropic_client")
     def test_anthropic_llm(self, mock_get_client: MagicMock) -> None:
@@ -87,8 +96,43 @@ class TestProcessTextLLM:
             "anthropic_key": "sk-ant-test1234567890123",
             "models": {"anthropic_llm": "claude-sonnet-4-20250514"},
             "snippets": {},
-            "system_prompt": "Test prompt {snippets}",
+            "custom_vocabulary": [],
+            "system_prompt": "Test prompt {snippets} {vocabulary}",
         }
 
         result = process_text_llm("hello", "context", config)
         assert result == "Claude response"
+
+        # Verify empty snippets/vocabulary produce "(none)"
+        call_args = mock_client.messages.create.call_args
+        system_content = call_args[1]["system"]
+        assert "(none)" in system_content
+        assert "{snippets}" not in system_content
+        assert "{vocabulary}" not in system_content
+
+    @patch("talkie_modules.api_client._get_openai_client")
+    def test_prompt_without_vocabulary_placeholder(self, mock_get_client: MagicMock) -> None:
+        """Old prompts without {vocabulary} should work — .replace() is a no-op."""
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="Result"))]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_get_client.return_value = mock_client
+
+        config = {
+            "api_provider": "openai",
+            "openai_key": "sk-test123456789012345",
+            "models": {"openai_llm": "gpt-4o"},
+            "snippets": {},
+            "custom_vocabulary": ["Talkie", "Wispr Flow"],
+            "system_prompt": "Old prompt with only {snippets} placeholder",
+        }
+
+        result = process_text_llm("hello", "context", config)
+        assert result == "Result"
+
+        # Verify no literal {vocabulary} leaked into prompt
+        call_args = mock_client.chat.completions.create.call_args
+        system_msg = call_args[1]["messages"][0]["content"]
+        assert "{vocabulary}" not in system_msg
+        assert "Talkie" not in system_msg  # vocabulary not injected without placeholder

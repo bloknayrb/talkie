@@ -93,11 +93,19 @@ def process_text_llm(transcription: str, context: str, config: dict[str, Any]) -
     provider: str = config.get("api_provider", "openai")
     models = config.get("models", {})
 
-    # Build system prompt
+    # Build system prompt — substitute {vocabulary} and {snippets} placeholders
+    vocabulary_list = config.get("custom_vocabulary", [])
+    vocabulary_str = ", ".join(vocabulary_list) if vocabulary_list else "(none)"
+
     snippets_str = ", ".join(
         [f"'{k}' to '{v}'" for k, v in config.get("snippets", {}).items()]
     )
-    system_prompt = config.get("system_prompt", "").replace("{snippets}", snippets_str)
+    if not snippets_str:
+        snippets_str = "(none)"
+
+    system_prompt = config.get("system_prompt", "")
+    system_prompt = system_prompt.replace("{vocabulary}", vocabulary_str)
+    system_prompt = system_prompt.replace("{snippets}", snippets_str)
     temperature = config.get("temperature", 0)
 
     user_prompt = (

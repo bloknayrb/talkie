@@ -11,6 +11,7 @@ from typing import Any, Optional
 import bottle
 
 from talkie_modules.config_manager import (
+    DEFAULT_CONFIG,
     load_config,
     save_config,
     save_api_key,
@@ -19,33 +20,19 @@ from talkie_modules.config_manager import (
     get_missing_keys,
 )
 from talkie_modules.logger import get_logger
+from talkie_modules.providers import (
+    PROVIDERS,
+    KEY_NAMES,
+    KEY_PREFIXES,
+    STT_MODELS,
+    LLM_MODELS,
+)
 
 logger = get_logger("settings_server")
 
-# Static model lists per provider
-_STT_MODELS: dict[str, list[str]] = {
-    "openai": ["whisper-1"],
-    "groq": ["whisper-large-v3-turbo", "whisper-large-v3"],
-}
-
-_LLM_MODELS: dict[str, list[str]] = {
-    "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
-    "groq": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
-    "anthropic": ["claude-sonnet-4-20250514", "claude-haiku-4-5-20251001"],
-}
-
-# Key name to human-friendly prefix mapping for masking
-_KEY_PREFIXES = {
-    "openai_key": "sk-",
-    "groq_key": "gsk_",
-    "anthropic_key": "sk-ant-",
-}
-
-_KEY_NAMES = ("openai_key", "groq_key", "anthropic_key")
-
-_VALID_PROVIDERS = frozenset(_STT_MODELS) | frozenset(_LLM_MODELS)
-_VALID_STT_PROVIDERS = frozenset(_STT_MODELS)
-_VALID_LLM_PROVIDERS = frozenset(_LLM_MODELS)
+_VALID_PROVIDERS = frozenset(STT_MODELS) | frozenset(LLM_MODELS)
+_VALID_STT_PROVIDERS = frozenset(STT_MODELS)
+_VALID_LLM_PROVIDERS = frozenset(LLM_MODELS)
 
 _NUMERIC_VALIDATORS = {
     "temperature": (float, 0.0, 2.0),
@@ -74,7 +61,7 @@ def _mask_key(key_name: str, value: str) -> str:
     """Mask an API key for display. Returns 'sk-...xxxx' style."""
     if not value:
         return ""
-    prefix = _KEY_PREFIXES.get(key_name, "")
+    prefix = KEY_PREFIXES.get(key_name, "")
     if len(value) > 8:
         return f"{prefix}...{value[-4:]}"
     return "***"
@@ -116,10 +103,11 @@ def create_app(
     def get_config():
         config = load_config()
         # Mask API keys
-        for key_name in _KEY_NAMES:
+        for key_name in KEY_NAMES:
             config[key_name] = _mask_key(key_name, config.get(key_name, ""))
         # Add missing keys info for first-run detection
         config["_missing_keys"] = get_missing_keys(config)
+        config["_default_system_prompt"] = DEFAULT_CONFIG["system_prompt"]
         return config
 
     @app.route("/api/config", method="POST")
@@ -276,7 +264,24 @@ def create_app(
 
     @app.route("/api/models", method="GET")
     def get_models():
-        return {"stt": _STT_MODELS, "llm": _LLM_MODELS}
+        return {"stt": STT_MODELS, "llm": LLM_MODELS}
+
+    # ---- Providers ----
+
+    @app.route("/api/providers", method="GET")
+    def get_providers():
+        """Return provider metadata for dynamic frontend rendering."""
+        result = []
+        for pid, pinfo in PROVIDERS.items():
+            result.append({
+                "id": pid,
+                "label": pinfo["label"],
+                "placeholder": pinfo["key_prefix"] + "...",
+                "url": pinfo["key_url"],
+                "has_stt": pinfo["stt_models"] is not None,
+                "has_llm": pinfo["llm_models"] is not None,
+            })
+        return {"providers": result}
 
     # ---- About ----
 

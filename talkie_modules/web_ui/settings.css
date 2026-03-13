@@ -413,6 +413,10 @@ input[type="range"] {
 
 /* System Prompt */
 
+.prompt-temperature {
+    margin-top: 16px;
+}
+
 .prompt-actions {
     display: flex;
     align-items: center;

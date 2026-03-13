@@ -132,41 +132,7 @@
                 <h2>API Keys</h2>
                 <p class="hint">Keys are stored securely in Windows Credential Manager.</p>
 
-                <div class="key-group" id="key-openai">
-                    <div class="form-row">
-                        <label>OpenAI: <a href="https://platform.openai.com/api-keys" target="_blank" class="key-link">Get key &rarr;</a></label>
-                        <input type="password" id="openai-key" placeholder="sk-..." autocomplete="off">
-                        <span class="key-status" id="openai-key-status"></span>
-                    </div>
-                    <div class="key-actions">
-                        <button class="btn btn-sm" onclick="testKey('openai')">Test</button>
-                        <button class="btn btn-sm btn-primary" onclick="saveKey('openai')">Save</button>
-                    </div>
-                </div>
-
-                <div class="key-group" id="key-groq">
-                    <div class="form-row">
-                        <label>Groq: <a href="https://console.groq.com/keys" target="_blank" class="key-link">Get key &rarr;</a></label>
-                        <input type="password" id="groq-key" placeholder="gsk_..." autocomplete="off">
-                        <span class="key-status" id="groq-key-status"></span>
-                    </div>
-                    <div class="key-actions">
-                        <button class="btn btn-sm" onclick="testKey('groq')">Test</button>
-                        <button class="btn btn-sm btn-primary" onclick="saveKey('groq')">Save</button>
-                    </div>
-                </div>
-
-                <div class="key-group" id="key-anthropic">
-                    <div class="form-row">
-                        <label>Anthropic: <a href="https://console.anthropic.com/settings/keys" target="_blank" class="key-link">Get key &rarr;</a></label>
-                        <input type="password" id="anthropic-key" placeholder="sk-ant-..." autocomplete="off">
-                        <span class="key-status" id="anthropic-key-status"></span>
-                    </div>
-                    <div class="key-actions">
-                        <button class="btn btn-sm" onclick="testKey('anthropic')">Test</button>
-                        <button class="btn btn-sm btn-primary" onclick="saveKey('anthropic')">Save</button>
-                    </div>
-                </div>
+                <div id="key-groups"></div>
             </section>
 
             <!-- Hotkey -->
@@ -193,6 +159,7 @@
                     </div>
                 </div>
                 <button class="btn btn-primary" id="save-hotkey">Save Hotkey Settings</button>
+                <span class="save-status" id="hotkey-status"></span>
             </section>
 
             <!-- Snippets -->
@@ -212,6 +179,7 @@
                 <p class="hint">Comma-separated words for improved transcription accuracy.</p>
                 <textarea id="vocab-text" rows="8" placeholder="Talkie, Wispr Flow, ..."></textarea>
                 <button class="btn btn-primary" id="save-vocab">Save Vocabulary</button>
+                <span class="save-status" id="vocab-status"></span>
             </section>
 
             <!-- System Prompt -->
@@ -220,7 +188,7 @@
                 <label for="system-prompt-text" class="hint">Customize the LLM system prompt used to process your dictation.</label>
                 <p class="hint" id="prompt-hint">Your snippet expansions and custom vocabulary are automatically included. Use <code>{snippets}</code> and <code>{vocabulary}</code> to control where they appear in the prompt.</p>
                 <textarea id="system-prompt-text" rows="12" aria-describedby="prompt-hint"></textarea>
-                <div class="form-group" style="margin-top: 16px;">
+                <div class="form-group prompt-temperature">
                     <div class="slider-row">
                         <label>Temperature:</label>
                         <input type="range" id="temperature" min="0" max="2.0" step="0.1">

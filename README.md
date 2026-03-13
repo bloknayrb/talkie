@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.png" alt="Talkie — FOSS Voice Typing for Windows PCs" width="600">
+</p>
+
 # Talkie
 
 [![AI Slop Inside](https://sladge.net/badge.svg)](https://sladge.net)

@@ -25,10 +25,16 @@ class TestResolveKey:
 
 
 class TestTranscribeAudio:
-    def test_unsupported_provider(self) -> None:
+    def test_unknown_provider(self) -> None:
         config = {"stt_provider": "azure", "models": {}}
         audio = np.zeros((1000, 1), dtype=np.float32)
-        with pytest.raises(TalkieConfigError, match="Unsupported STT"):
+        with pytest.raises(TalkieConfigError, match="Unknown STT provider"):
+            transcribe_audio(audio, config)
+
+    def test_no_stt_support(self) -> None:
+        config = {"stt_provider": "anthropic", "models": {}}
+        audio = np.zeros((1000, 1), dtype=np.float32)
+        with pytest.raises(TalkieConfigError, match="does not support STT"):
             transcribe_audio(audio, config)
 
     @patch("talkie_modules.api_client._get_openai_client")
@@ -50,9 +56,9 @@ class TestTranscribeAudio:
 
 
 class TestProcessTextLLM:
-    def test_unsupported_provider(self) -> None:
+    def test_unknown_provider(self) -> None:
         config = {"api_provider": "azure", "models": {}, "snippets": {}, "system_prompt": "test"}
-        with pytest.raises(TalkieConfigError, match="Unsupported LLM"):
+        with pytest.raises(TalkieConfigError, match="Unknown LLM provider"):
             process_text_llm("hello", "context", config)
 
     @patch("talkie_modules.api_client._get_openai_client")

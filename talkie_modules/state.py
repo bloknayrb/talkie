@@ -65,7 +65,7 @@ class StateMachine:
             try:
                 cb(to_state)
             except Exception as e:
-                logger.warning("State callback error: %s", e)
+                logger.warning("State callback error: %s", e, exc_info=True)
 
         return True
 

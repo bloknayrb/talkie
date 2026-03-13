@@ -7,18 +7,24 @@ import keyring
 
 from talkie_modules.paths import CONFIG_FILE
 from talkie_modules.logger import get_logger
+from talkie_modules.providers import KEY_NAMES, KEY_PREFIXES, PROVIDER_KEY_MAP, PROVIDERS
 
 logger = get_logger("config")
 
 _KEYRING_SERVICE = "Talkie"
-_KEY_NAMES = ("openai_key", "groq_key", "anthropic_key")
+
+# Build default model selections from provider registry
+_default_models: dict[str, str] = {}
+for _pid, _pinfo in PROVIDERS.items():
+    if _pinfo.get("stt_models"):
+        _default_models[f"{_pid}_stt"] = _pinfo["default_stt"]
+    if _pinfo.get("llm_models"):
+        _default_models[f"{_pid}_llm"] = _pinfo["default_llm"]
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "api_provider": "openai",
     "stt_provider": "openai",
-    "openai_key": "",
-    "groq_key": "",
-    "anthropic_key": "",
+    **{p["key_name"]: "" for p in PROVIDERS.values()},
     "hotkey": "ctrl+win",
     "snippets": {
         "gm": "Good morning",
@@ -48,13 +54,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "8. Prefer these spellings for specialized terms: {vocabulary}.\n"
         "9. Output ONLY the cleaned text — no preamble, labels, quotes, or explanation."
     ),
-    "models": {
-        "openai_stt": "whisper-1",
-        "groq_stt": "whisper-large-v3-turbo",
-        "openai_llm": "gpt-4o",
-        "groq_llm": "llama-3.3-70b-versatile",
-        "anthropic_llm": "claude-sonnet-4-20250514",
-    },
+    "models": dict(_default_models),
     "temperature": 0,
     "log_level": "INFO",
 }
@@ -89,7 +89,7 @@ def _set_key_in_keyring(key_name: str, value: str) -> bool:
 def _migrate_keys_to_keyring(config: dict[str, Any]) -> bool:
     """Move plaintext keys from config.json to keyring. Returns True if any migrated."""
     migrated = False
-    for key_name in _KEY_NAMES:
+    for key_name in KEY_NAMES:
         plaintext_key = config.get(key_name, "")
         if plaintext_key and not plaintext_key.startswith("keyring:"):
             if _set_key_in_keyring(key_name, plaintext_key):
@@ -125,7 +125,7 @@ def load_config() -> dict[str, Any]:
         save_config(config)
 
     # Load keys from keyring (overrides empty config values)
-    for key_name in _KEY_NAMES:
+    for key_name in KEY_NAMES:
         keyring_val = _get_key_from_keyring(key_name)
         if keyring_val:
             config[key_name] = keyring_val
@@ -138,7 +138,7 @@ def save_config(config: dict[str, Any]) -> None:
     # Make a copy to avoid mutating the original
     config_to_save = dict(config)
     # Strip keys from file — they live in keyring
-    for key_name in _KEY_NAMES:
+    for key_name in KEY_NAMES:
         config_to_save[key_name] = ""
 
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
@@ -148,7 +148,7 @@ def save_config(config: dict[str, Any]) -> None:
 
 def save_api_key(key_name: str, value: str) -> bool:
     """Store a single API key in keyring. Returns True on success."""
-    if key_name not in _KEY_NAMES:
+    if key_name not in KEY_NAMES:
         logger.warning("Unknown key name: %s", key_name)
         return False
     return _set_key_in_keyring(key_name, value)
@@ -169,14 +169,8 @@ def get_missing_keys(config: dict[str, Any]) -> list[str]:
     stt_provider = config.get("stt_provider", "openai")
     llm_provider = config.get("api_provider", "openai")
 
-    provider_key_map = {
-        "openai": "openai_key",
-        "groq": "groq_key",
-        "anthropic": "anthropic_key",
-    }
-
-    stt_key_name = provider_key_map.get(stt_provider)
-    llm_key_name = provider_key_map.get(llm_provider)
+    stt_key_name = PROVIDER_KEY_MAP.get(stt_provider)
+    llm_key_name = PROVIDER_KEY_MAP.get(llm_provider)
 
     if stt_key_name and not get_api_key(stt_key_name):
         missing.append(f"STT ({stt_provider})")
@@ -198,14 +192,15 @@ def validate_api_key_format(key_name: str, value: str) -> Optional[str]:
     if not value:
         return "Key is empty"
 
-    if key_name == "openai_key":
-        if not (value.startswith("sk-") and len(value) >= 20):
-            return "OpenAI keys start with 'sk-' and are 20+ characters"
-    elif key_name == "groq_key":
-        if not (value.startswith("gsk_") and len(value) >= 20):
-            return "Groq keys start with 'gsk_' and are 20+ characters"
-    elif key_name == "anthropic_key":
-        if not (value.startswith("sk-ant-") and len(value) >= 20):
-            return "Anthropic keys start with 'sk-ant-' and are 20+ characters"
+    prefix = KEY_PREFIXES.get(key_name)
+    if prefix:
+        # Find the provider info for this key name to get min_length and label
+        provider_info = next(
+            (p for p in PROVIDERS.values() if p["key_name"] == key_name), None
+        )
+        if provider_info:
+            min_len = provider_info["key_min_length"]
+            if not (value.startswith(prefix) and len(value) >= min_len):
+                return f"{provider_info['label']} keys start with '{prefix}' and are {min_len}+ characters"
 
     return None

@@ -10,6 +10,7 @@ import soundfile as sf
 
 from talkie_modules.exceptions import TalkieAPIError, TalkieConfigError
 from talkie_modules.logger import get_logger
+from talkie_modules.providers import PROVIDERS
 
 logger = get_logger("api")
 
@@ -43,6 +44,17 @@ def _get_anthropic_client(api_key: str) -> "anthropic.Anthropic":
     return anthropic.Anthropic(api_key=api_key, timeout=_TIMEOUT)
 
 
+def _get_client(provider: str, api_key: str):
+    """Get the appropriate SDK client for a provider."""
+    if provider == "openai":
+        return _get_openai_client(api_key)
+    elif provider == "groq":
+        return _get_groq_client(api_key)
+    elif provider == "anthropic":
+        return _get_anthropic_client(api_key)
+    raise TalkieConfigError(f"No client factory for provider: {provider}")
+
+
 # ---------------------------------------------------------------------------
 # STT
 # ---------------------------------------------------------------------------
@@ -50,18 +62,17 @@ def _get_anthropic_client(api_key: str) -> "anthropic.Anthropic":
 def transcribe_audio(audio_data: npt.NDArray, config: dict[str, Any]) -> str:
     """Transcribe audio using the configured STT provider. Returns transcription text."""
     provider: str = config.get("stt_provider", "openai")
-    models = config.get("models", {})
+    provider_info = PROVIDERS.get(provider)
+    if not provider_info:
+        raise TalkieConfigError(f"Unknown STT provider: {provider}")
+    if provider_info["stt_models"] is None:
+        raise TalkieConfigError(f"{provider_info['label']} does not support STT")
 
-    if provider == "openai":
-        api_key = _resolve_key(config, "openai_key", "OPENAI_API_KEY")
-        client = _get_openai_client(api_key)
-        model = models.get("openai_stt", "whisper-1")
-    elif provider == "groq":
-        api_key = _resolve_key(config, "groq_key", "GROQ_API_KEY")
-        client = _get_groq_client(api_key)
-        model = models.get("groq_stt", "whisper-large-v3-turbo")
-    else:
-        raise TalkieConfigError(f"Unsupported STT provider: {provider}")
+    # Resolve key, client, and model from registry
+    api_key = _resolve_key(config, provider_info["key_name"], provider_info["key_env"])
+    client = _get_client(provider, api_key)
+    models = config.get("models", {})
+    model = models.get(f"{provider}_stt", provider_info["default_stt"])
 
     # Convert numpy audio to WAV bytes
     buffer = io.BytesIO()
@@ -91,7 +102,9 @@ def transcribe_audio(audio_data: npt.NDArray, config: dict[str, Any]) -> str:
 def process_text_llm(transcription: str, context: str, config: dict[str, Any]) -> str:
     """Process transcription through an LLM for formatting and context awareness."""
     provider: str = config.get("api_provider", "openai")
-    models = config.get("models", {})
+    provider_info = PROVIDERS.get(provider)
+    if not provider_info:
+        raise TalkieConfigError(f"Unknown LLM provider: {provider}")
 
     # Build system prompt — substitute {vocabulary} and {snippets} placeholders
     vocabulary_list = config.get("custom_vocabulary", [])
@@ -113,18 +126,15 @@ def process_text_llm(transcription: str, context: str, config: dict[str, Any]) -
         f"<transcription>{transcription}</transcription>"
     )
 
+    # Resolve key, client, and model from registry
+    api_key = _resolve_key(config, provider_info["key_name"], provider_info["key_env"])
+    client = _get_client(provider, api_key)
+    models = config.get("models", {})
+    model = models.get(f"{provider}_llm", provider_info["default_llm"])
+
     logger.info("Processing with %s LLM", provider)
 
-    if provider in ("openai", "groq"):
-        if provider == "openai":
-            api_key = _resolve_key(config, "openai_key", "OPENAI_API_KEY")
-            client = _get_openai_client(api_key)
-            model = models.get("openai_llm", "gpt-4o")
-        else:
-            api_key = _resolve_key(config, "groq_key", "GROQ_API_KEY")
-            client = _get_groq_client(api_key)
-            model = models.get("groq_llm", "llama-3.3-70b-versatile")
-
+    if provider_info["sdk"] == "openai":
         try:
             response = client.chat.completions.create(
                 model=model,
@@ -140,11 +150,7 @@ def process_text_llm(transcription: str, context: str, config: dict[str, Any]) -
         except Exception as e:
             raise _wrap_api_error(e, provider, "LLM") from e
 
-    elif provider == "anthropic":
-        api_key = _resolve_key(config, "anthropic_key", "ANTHROPIC_API_KEY")
-        client = _get_anthropic_client(api_key)
-        model = models.get("anthropic_llm", "claude-sonnet-4-20250514")
-
+    elif provider_info["sdk"] == "anthropic":
         try:
             response = client.messages.create(
                 model=model,
@@ -160,60 +166,62 @@ def process_text_llm(transcription: str, context: str, config: dict[str, Any]) -
             raise _wrap_api_error(e, provider, "LLM") from e
 
     else:
-        raise TalkieConfigError(f"Unsupported LLM provider: {provider}")
+        raise TalkieConfigError(f"Unsupported SDK type: {provider_info['sdk']}")
+
+
+# ---------------------------------------------------------------------------
+# Connection test
+# ---------------------------------------------------------------------------
+
+def test_connection(provider: str, api_key: str) -> None:
+    """Test an API connection. Raises on failure."""
+    provider_info = PROVIDERS.get(provider)
+    if not provider_info:
+        raise TalkieConfigError(f"Unknown provider: {provider}")
+
+    if provider_info["sdk"] == "openai":
+        client = _get_client(provider, api_key)
+        client.models.list()
+    elif provider_info["sdk"] == "anthropic":
+        client = _get_client(provider, api_key)
+        # Use the last (cheapest) model for the connection test
+        test_model = provider_info["llm_models"][-1]
+        client.messages.create(
+            model=test_model,
+            max_tokens=1,
+            messages=[{"role": "user", "content": "hi"}],
+        )
 
 
 # ---------------------------------------------------------------------------
 # Error wrapping
 # ---------------------------------------------------------------------------
 
-def test_connection(provider: str, api_key: str) -> None:
-    """Test an API connection. Raises on failure."""
-    if provider in ("openai", "groq"):
-        client = _get_openai_client(api_key) if provider == "openai" else _get_groq_client(api_key)
-        client.models.list()
-    elif provider == "anthropic":
-        client = _get_anthropic_client(api_key)
-        client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1,
-            messages=[{"role": "user", "content": "hi"}],
-        )
+_ERROR_MESSAGES = {
+    "AuthenticationError": "Invalid {provider} API key",
+    "APITimeoutError": "{provider} {operation} request timed out",
+    "APIConnectionError": "Cannot connect to {provider} — check your network",
+    "RateLimitError": "{provider} rate limit exceeded — try again shortly",
+}
 
 
 def _wrap_api_error(error: Exception, provider: str, operation: str) -> TalkieAPIError:
     """Convert SDK exceptions into user-friendly TalkieAPIError messages."""
-    error_type = type(error).__name__
-    msg = str(error)
-
-    # OpenAI/Groq SDK errors
-    try:
-        import openai
-        if isinstance(error, openai.AuthenticationError):
-            return TalkieAPIError(f"Invalid {provider} API key", provider, error)
-        if isinstance(error, openai.APITimeoutError):
-            return TalkieAPIError(f"{provider} {operation} request timed out", provider, error)
-        if isinstance(error, openai.APIConnectionError):
-            return TalkieAPIError(f"Cannot connect to {provider} — check your network", provider, error)
-        if isinstance(error, openai.RateLimitError):
-            return TalkieAPIError(f"{provider} rate limit exceeded — try again shortly", provider, error)
-    except ImportError:
-        pass
-
-    # Anthropic SDK errors
-    try:
-        import anthropic
-        if isinstance(error, anthropic.AuthenticationError):
-            return TalkieAPIError(f"Invalid {provider} API key", provider, error)
-        if isinstance(error, anthropic.APITimeoutError):
-            return TalkieAPIError(f"{provider} {operation} request timed out", provider, error)
-        if isinstance(error, anthropic.APIConnectionError):
-            return TalkieAPIError(f"Cannot connect to {provider} — check your network", provider, error)
-        if isinstance(error, anthropic.RateLimitError):
-            return TalkieAPIError(f"{provider} rate limit exceeded — try again shortly", provider, error)
-    except ImportError:
-        pass
+    for mod_name in ("openai", "anthropic"):
+        try:
+            mod = __import__(mod_name)
+            for err_name, msg_template in _ERROR_MESSAGES.items():
+                err_class = getattr(mod, err_name, None)
+                if err_class and isinstance(error, err_class):
+                    return TalkieAPIError(
+                        msg_template.format(provider=provider, operation=operation),
+                        provider, error,
+                    )
+        except ImportError:
+            continue
 
     # Fallback
+    error_type = type(error).__name__
+    msg = str(error)
     logger.error("%s %s error (%s): %s", provider, operation, error_type, msg)
     return TalkieAPIError(f"{provider} {operation} error: {msg}", provider, error)

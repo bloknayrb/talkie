@@ -2,33 +2,18 @@
 
 let config = {};
 let models = { stt: {}, llm: {} };
-
-// Must match DEFAULT_CONFIG["system_prompt"] in config_manager.py
-const DEFAULT_SYSTEM_PROMPT =
-    'You are a dictation post-processor. You receive raw speech-to-text output ' +
-    'and clean it for direct insertion into a text field.\n\n' +
-    'Rules:\n' +
-    '1. Preserve the speaker\'s exact words and phrasing. Do NOT rephrase, reorder, ' +
-    'paraphrase, add words, or change meaning.\n' +
-    '2. Remove only these filler sounds: um, uh, ah, er, hmm, mhm, uh-huh. ' +
-    'Remove "like", "you know", "I mean", "basically", "sort of", "kind of", ' +
-    'and "right" only when used as filler — not when they carry meaning.\n' +
-    '3. Self-corrections: when the speaker restarts or corrects a phrase, keep only ' +
-    'the final version. Example: "I need the — I want the blue one" becomes ' +
-    '"I want the blue one."\n' +
-    '4. Punctuation: use only periods, commas, question marks, and exclamation points. ' +
-    'No em-dashes, semicolons, colons, or ellipses.\n' +
-    '5. Capitalize sentence starts and proper nouns only.\n' +
-    '6. If <previous_context> ends mid-sentence, continue seamlessly with appropriate ' +
-    'casing. If it ends with terminal punctuation or is empty, begin a new sentence.\n' +
-    '7. Expand these snippet shortcuts when spoken: {snippets}.\n' +
-    '8. Prefer these spellings for specialized terms: {vocabulary}.\n' +
-    '9. Output ONLY the cleaned text — no preamble, labels, quotes, or explanation.';
+let defaultSystemPrompt = '';  // Fetched from backend during loadConfig()
+let hotkeyPollTimer = null;
 
 // ---- Navigation ----
 
 document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', () => {
+        // Clear hotkey poll timer when navigating away
+        if (hotkeyPollTimer) {
+            clearInterval(hotkeyPollTimer);
+            hotkeyPollTimer = null;
+        }
         document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
         document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
         item.classList.add('active');
@@ -42,19 +27,47 @@ document.querySelectorAll('.nav-item').forEach(item => {
 async function api(method, path, body = null) {
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
     if (body) opts.body = JSON.stringify(body);
-    const res = await fetch(path, opts);
-    return res.json();
+    try {
+        const res = await fetch(path, opts);
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`${res.status}: ${text}`);
+        }
+        return res.json();
+    } catch (err) {
+        console.error(`API ${method} ${path} failed:`, err);
+        return { status: 'error', message: err.message };
+    }
 }
 
 // ---- Load Config ----
 
 async function loadConfig() {
     config = await api('GET', '/api/config');
+    if (config.status === 'error') {
+        const content = document.querySelector('.content');
+        const section = document.createElement('section');
+        section.className = 'section active';
+        const h2 = document.createElement('h2');
+        h2.textContent = 'Error';
+        const p = document.createElement('p');
+        p.textContent = 'Failed to load configuration: ' + (config.message || 'unknown error');
+        section.appendChild(h2);
+        section.appendChild(p);
+        content.replaceChildren(section);
+        return;
+    }
     models = await api('GET', '/api/models');
+    if (models.status === 'error') {
+        models = { stt: {}, llm: {} };
+    }
     populateUI();
 }
 
 function populateUI() {
+    // Store default system prompt from backend
+    defaultSystemPrompt = config._default_system_prompt || '';
+
     // Providers
     setVal('stt-provider', config.stt_provider || 'openai');
     setVal('llm-provider', config.api_provider || 'openai');
@@ -76,8 +89,8 @@ function populateUI() {
     document.getElementById('silence-threshold').value = silence;
     document.getElementById('silence-value').textContent = silence.toFixed(3);
 
-    // API key statuses
-    loadKeyStatuses();
+    // Build dynamic key groups, then load statuses
+    buildKeyGroups().then(() => loadKeyStatuses());
 
     // Snippets
     populateSnippets();
@@ -87,7 +100,7 @@ function populateUI() {
     document.getElementById('vocab-text').value = vocab.join(', ');
 
     // System Prompt
-    document.getElementById('system-prompt-text').value = config.system_prompt || DEFAULT_SYSTEM_PROMPT;
+    document.getElementById('system-prompt-text').value = config.system_prompt || defaultSystemPrompt;
     const temp = config.temperature !== undefined ? config.temperature : 0;
     document.getElementById('temperature').value = temp;
     document.getElementById('temperature-value').textContent = parseFloat(temp).toFixed(1);
@@ -174,11 +187,20 @@ document.getElementById('save-providers').addEventListener('click', async () => 
 
 // ---- API Keys ----
 
+// Cache key status data to avoid double-fetching (loadKeyStatuses + updateQuickStartBadges)
+let _keyStatusCache = {};
+
 async function loadKeyStatuses() {
+    _keyStatusCache = {};
     for (const provider of ['openai', 'groq', 'anthropic']) {
         const data = await api('GET', `/api/keys/${provider}`);
+        _keyStatusCache[provider] = data;
         const statusEl = document.getElementById(`${provider}-key-status`);
-        if (data.exists) {
+        if (!statusEl) continue;
+        if (data.status === 'error') {
+            statusEl.textContent = 'error';
+            statusEl.className = 'key-status error';
+        } else if (data.exists) {
             statusEl.textContent = data.masked;
             statusEl.className = 'key-status ok';
         } else {
@@ -200,6 +222,7 @@ async function saveKey(provider) {
         statusEl.textContent = result.masked;
         statusEl.className = 'key-status ok';
         input.value = '';
+        _keyStatusCache[provider] = { exists: true, masked: result.masked };
         updateQuickStartBadges();
     } else {
         statusEl.textContent = result.message;
@@ -225,13 +248,69 @@ async function testKey(provider) {
     }
 }
 
-// Make functions available globally for onclick handlers
-window.saveKey = saveKey;
-window.testKey = testKey;
+// ---- Dynamic Key Groups ----
+
+async function buildKeyGroups() {
+    const container = document.getElementById('key-groups');
+    if (!container) return;
+
+    const data = await api('GET', '/api/providers');
+    if (data.status === 'error' || !data.providers) return;
+
+    for (const prov of data.providers) {
+        const group = document.createElement('div');
+        group.className = 'key-group';
+        group.id = `key-${prov.id}`;
+
+        const formRow = document.createElement('div');
+        formRow.className = 'form-row';
+
+        const label = document.createElement('label');
+        label.textContent = prov.label + ': ';
+        const link = document.createElement('a');
+        link.href = prov.url;
+        link.target = '_blank';
+        link.className = 'key-link';
+        link.textContent = 'Get key \u2192';
+        label.appendChild(link);
+
+        const input = document.createElement('input');
+        input.type = 'password';
+        input.id = `${prov.id}-key`;
+        input.placeholder = prov.placeholder;
+        input.autocomplete = 'off';
+
+        const status = document.createElement('span');
+        status.className = 'key-status';
+        status.id = `${prov.id}-key-status`;
+
+        formRow.appendChild(label);
+        formRow.appendChild(input);
+        formRow.appendChild(status);
+
+        const actions = document.createElement('div');
+        actions.className = 'key-actions';
+
+        const testBtn = document.createElement('button');
+        testBtn.className = 'btn btn-sm';
+        testBtn.textContent = 'Test';
+        testBtn.addEventListener('click', () => testKey(prov.id));
+
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'btn btn-sm btn-primary';
+        saveBtn.textContent = 'Save';
+        saveBtn.addEventListener('click', () => saveKey(prov.id));
+
+        actions.appendChild(testBtn);
+        actions.appendChild(saveBtn);
+
+        group.appendChild(formRow);
+        group.appendChild(actions);
+        container.appendChild(group);
+    }
+}
 
 // ---- Hotkey ----
-
-let hotkeyPollTimer = null;
 
 document.getElementById('record-hotkey-btn').addEventListener('click', async () => {
     const btn = document.getElementById('record-hotkey-btn');
@@ -255,11 +334,17 @@ document.getElementById('record-hotkey-btn').addEventListener('click', async () 
 });
 
 document.getElementById('save-hotkey').addEventListener('click', async () => {
-    await api('POST', '/api/config', {
+    const result = await api('POST', '/api/config', {
         hotkey: document.getElementById('hotkey-display').value,
         min_hold_seconds: parseFloat(document.getElementById('min-hold').value),
         silence_rms_threshold: parseFloat(document.getElementById('silence-threshold').value),
     });
+    const statusEl = document.getElementById('hotkey-status');
+    if (statusEl) {
+        statusEl.textContent = result.status === 'error' ? result.message : 'Saved';
+        statusEl.className = 'save-status ' + (result.status === 'error' ? 'error' : 'ok');
+        setTimeout(() => { statusEl.textContent = ''; }, 2000);
+    }
 });
 
 // Slider value display
@@ -285,11 +370,27 @@ function addSnippetRow(trigger = '', expansion = '') {
     const container = document.getElementById('snippets-list');
     const row = document.createElement('div');
     row.className = 'snippet-row';
-    row.innerHTML = `
-        <input type="text" class="trigger" placeholder="trigger" value="${escHtml(trigger)}">
-        <input type="text" class="expansion" placeholder="expansion text" value="${escHtml(expansion)}">
-        <button class="btn btn-sm btn-danger" onclick="this.parentElement.remove()">X</button>
-    `;
+
+    const triggerInput = document.createElement('input');
+    triggerInput.type = 'text';
+    triggerInput.className = 'trigger';
+    triggerInput.placeholder = 'trigger';
+    triggerInput.value = trigger;
+
+    const expansionInput = document.createElement('input');
+    expansionInput.type = 'text';
+    expansionInput.className = 'expansion';
+    expansionInput.placeholder = 'expansion text';
+    expansionInput.value = expansion;
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn btn-sm btn-danger';
+    deleteBtn.textContent = 'X';
+    deleteBtn.addEventListener('click', () => row.remove());
+
+    row.appendChild(triggerInput);
+    row.appendChild(expansionInput);
+    row.appendChild(deleteBtn);
     container.appendChild(row);
 }
 
@@ -330,7 +431,13 @@ document.getElementById('save-snippets').addEventListener('click', async () => {
 document.getElementById('save-vocab').addEventListener('click', async () => {
     const text = document.getElementById('vocab-text').value;
     const words = text.split(',').map(w => w.trim()).filter(w => w);
-    await api('POST', '/api/config', { custom_vocabulary: words });
+    const result = await api('POST', '/api/config', { custom_vocabulary: words });
+    const statusEl = document.getElementById('vocab-status');
+    if (statusEl) {
+        statusEl.textContent = result.status === 'error' ? result.message : 'Saved';
+        statusEl.className = 'save-status ' + (result.status === 'error' ? 'error' : 'ok');
+        setTimeout(() => { statusEl.textContent = ''; }, 2000);
+    }
 });
 
 // ---- System Prompt ----
@@ -353,7 +460,7 @@ document.getElementById('save-prompt').addEventListener('click', async () => {
 });
 
 document.getElementById('reset-prompt').addEventListener('click', () => {
-    document.getElementById('system-prompt-text').value = DEFAULT_SYSTEM_PROMPT;
+    document.getElementById('system-prompt-text').value = defaultSystemPrompt;
     const statusEl = document.getElementById('prompt-status');
     statusEl.textContent = 'Reset — click Save to apply';
     statusEl.className = 'save-status';
@@ -370,7 +477,7 @@ async function updateQuickStartBadges() {
     // Step 1: Providers — always done (they have defaults)
     setBadge('providers', true);
 
-    // Step 2: Keys — check if required keys exist
+    // Step 2: Keys — use cache if available, otherwise fetch
     const sttProv = document.getElementById('stt-provider').value || config.stt_provider || 'openai';
     const llmProv = document.getElementById('llm-provider').value || config.api_provider || 'openai';
 
@@ -378,7 +485,11 @@ async function updateQuickStartBadges() {
     let allKeysSet = true;
 
     for (const p of providers) {
-        const data = await api('GET', `/api/keys/${p}`);
+        let data = _keyStatusCache[p];
+        if (!data) {
+            data = await api('GET', `/api/keys/${p}`);
+            _keyStatusCache[p] = data;
+        }
         if (!data.exists) {
             allKeysSet = false;
             break;
@@ -392,14 +503,17 @@ async function updateQuickStartBadges() {
 
 function setBadge(step, done) {
     const badge = document.getElementById(`badge-${step}`);
+    if (!badge) return;
+    // Store the original number on first call
+    if (!badge.dataset.num) {
+        badge.dataset.num = badge.textContent.trim();
+    }
     if (done) {
         badge.classList.add('done');
-        badge.innerHTML = '&#10003;';
+        badge.textContent = '\u2713';
     } else {
         badge.classList.remove('done');
-        // Restore the step number
-        const nums = { providers: '1', keys: '2', tryit: '3' };
-        badge.textContent = nums[step] || '';
+        badge.textContent = badge.dataset.num;
     }
 }
 
@@ -412,13 +526,14 @@ function showSection(sectionId) {
     });
 }
 
-// ---- Utilities ----
+// ---- Cleanup ----
 
-function escHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML.replace(/"/g, '&quot;');
-}
+window.addEventListener('beforeunload', () => {
+    if (hotkeyPollTimer) {
+        clearInterval(hotkeyPollTimer);
+        hotkeyPollTimer = null;
+    }
+});
 
 // ---- Init ----
 

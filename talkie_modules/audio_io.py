@@ -129,79 +129,83 @@ def compute_rms(audio: npt.NDArray) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Module-level recording state
+# AudioRecorder — encapsulates recording state
 # ---------------------------------------------------------------------------
 
-_recording: bool = False
-_audio_queue: queue.Queue = queue.Queue()
-_recording_thread: Optional[threading.Thread] = None
-_recorded_data: list[npt.NDArray] = []
-_recording_error: Optional[str] = None
+class AudioRecorder:
+    """Thread-safe audio recorder using sounddevice InputStream."""
 
+    def __init__(self) -> None:
+        self._recording: bool = False
+        self._audio_queue: queue.Queue = queue.Queue()
+        self._recording_thread: Optional[threading.Thread] = None
+        self._recorded_data: list[npt.NDArray] = []
+        self._recording_error: Optional[str] = None
 
-def _record_callback(indata: npt.NDArray, frames: int, time: object, status: sd.CallbackFlags) -> None:
-    if status:
-        logger.warning("Audio callback status: %s", status)
-    if _recording:
-        _audio_queue.put(indata.copy())
+    def _record_callback(self, indata: npt.NDArray, frames: int, time: object, status: sd.CallbackFlags) -> None:
+        if status:
+            logger.warning("Audio callback status: %s", status)
+        if self._recording:
+            self._audio_queue.put(indata.copy())
 
+    def start(self) -> None:
+        """Begin capturing audio from the default input device."""
+        self._recording = True
+        self._recorded_data = []
+        self._recording_error = None
+        # Drain stale data
+        while not self._audio_queue.empty():
+            self._audio_queue.get()
 
-def start_recording() -> None:
-    """Begin capturing audio from the default input device."""
-    global _recording, _audio_queue, _recorded_data, _recording_thread, _recording_error
-    _recording = True
-    _recorded_data = []
-    _recording_error = None
-    # Drain stale data
-    while not _audio_queue.empty():
-        _audio_queue.get()
+        def record_loop() -> None:
+            try:
+                with sd.InputStream(samplerate=RECORDING_RATE, channels=1, callback=self._record_callback):
+                    while self._recording:
+                        sd.sleep(100)
+            except Exception as e:
+                self._recording_error = str(e)
+                logger.error("Recording stream failed: %s", e)
 
-    def record_loop() -> None:
-        global _recording_error
-        try:
-            with sd.InputStream(samplerate=RECORDING_RATE, channels=1, callback=_record_callback):
-                while _recording:
-                    sd.sleep(100)
-        except Exception as e:
-            _recording_error = str(e)
-            logger.error("Recording stream failed: %s", e)
+        self._recording_thread = threading.Thread(target=record_loop, daemon=True)
+        self._recording_thread.start()
+        play_start_chime()
+        logger.info("Recording started")
 
-    _recording_thread = threading.Thread(target=record_loop, daemon=True)
-    _recording_thread.start()
-    play_start_chime()
-    logger.info("Recording started")
+    def stop(self) -> Optional[npt.NDArray]:
+        """Stop recording and return captured audio as numpy array, or None if empty."""
+        self._recording = False
 
+        if self._recording_thread:
+            self._recording_thread.join(timeout=5.0)
+            if self._recording_thread.is_alive():
+                logger.warning("Recording thread did not stop within 5s")
 
-def stop_recording() -> Optional[npt.NDArray]:
-    """Stop recording and return captured audio as numpy array, or None if empty."""
-    global _recording, _recording_thread, _recorded_data, _recording_error
-    _recording = False
+        while not self._audio_queue.empty():
+            self._recorded_data.append(self._audio_queue.get())
 
-    if _recording_thread:
-        _recording_thread.join(timeout=5.0)
-        if _recording_thread.is_alive():
-            logger.warning("Recording thread did not stop within 5s")
+        if self._recorded_data:
+            audio = np.concatenate(self._recorded_data, axis=0)
+            duration_s = len(audio) / RECORDING_RATE
+            logger.info(
+                "Recording stopped: %.1f seconds (%d samples), shape=%s",
+                duration_s,
+                len(audio),
+                audio.shape,
+            )
+            return audio
 
-    while not _audio_queue.empty():
-        _recorded_data.append(_audio_queue.get())
+        # Distinguish "silence" from "device error"
+        if self._recording_error:
+            err = self._recording_error
+            self._recording_error = None
+            logger.error("Recording failed due to device error: %s", err)
+            return None
 
-    if _recorded_data:
-        audio = np.concatenate(_recorded_data, axis=0)
-        duration_s = len(audio) / RECORDING_RATE
-        logger.info(
-            "Recording stopped: %.1f seconds (%d samples), shape=%s",
-            duration_s,
-            len(audio),
-            audio.shape,
-        )
-        return audio
-
-    # Distinguish "silence" from "device error"
-    if _recording_error:
-        err = _recording_error
-        _recording_error = None
-        logger.error("Recording failed due to device error: %s", err)
+        logger.info("Recording stopped: no audio captured")
         return None
 
-    logger.info("Recording stopped: no audio captured")
-    return None
+
+# Backward-compatible module-level aliases (main.py imports these by name)
+_default_recorder = AudioRecorder()
+start_recording = _default_recorder.start
+stop_recording = _default_recorder.stop

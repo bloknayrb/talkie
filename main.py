@@ -14,7 +14,8 @@ from talkie_modules.logger import setup_logging, get_logger
 from talkie_modules.config_manager import load_config, get_missing_keys
 from talkie_modules.audio_io import ensure_assets, start_recording, stop_recording, play_stop_chime, compute_rms
 from talkie_modules.hotkey_manager import HotkeyManager
-from talkie_modules.context_capture import get_context, get_target_hwnd
+from talkie_modules.context_capture import get_context, get_target_window
+from talkie_modules.profile_matcher import resolve_profile, apply_profile
 from talkie_modules.api_client import transcribe_audio, process_text_llm
 from talkie_modules.text_injector import inject_text
 from talkie_modules.settings_server import SettingsServer
@@ -63,6 +64,8 @@ class TalkieApp:
         self._settings_server: Optional[SettingsServer] = None
         self._pending_context: str = ""
         self._pending_hwnd: int = 0
+        self._pending_process: str = ""
+        self._pending_title: str = ""
         self._press_time: float = 0.0
         self._last_injected: str = ""
 
@@ -137,7 +140,7 @@ class TalkieApp:
         logger.info("Holding hotkey...")
         self._show_indicator(AppState.RECORDING)
         self._press_time = time.time()
-        self._pending_hwnd = get_target_hwnd()     # Fast — one Win32 call
+        self._pending_hwnd, self._pending_process, self._pending_title = get_target_window()
         start_recording()                           # Chime plays immediately
         self._pending_context = get_context(use_fallback=False)  # Slow, but recording already active
 
@@ -152,11 +155,21 @@ class TalkieApp:
         context = self._pending_context
         target_hwnd = self._pending_hwnd
         press_time = self._press_time
+        pending_process = self._pending_process
+        pending_title = self._pending_title
 
         def run_pipeline() -> None:
             audio_data = stop_recording()
             elapsed = time.time() - press_time
             config = load_config()
+            profile = resolve_profile(
+                config.get("profiles", []), pending_process, pending_title
+            )
+            if profile:
+                logger.info(
+                    "Matched profile: %s (for %s)", profile["name"], pending_process
+                )
+            config = apply_profile(config, profile)
             min_hold = config.get("min_hold_seconds", 1.0)
             silence_threshold = config.get("silence_rms_threshold", 0.005)
 

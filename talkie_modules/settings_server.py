@@ -6,6 +6,7 @@ Binds to 127.0.0.1:0 (OS-assigned port) to avoid conflicts.
 
 import os
 import threading
+import uuid
 from typing import Any, Optional
 
 import bottle
@@ -39,6 +40,18 @@ _NUMERIC_VALIDATORS = {
     "min_hold_seconds": (float, 0.2, 3.0),
     "silence_rms_threshold": (float, 0.001, 0.1),
 }
+
+
+def _validate_numeric(field: str, value: Any) -> Any:
+    """Validate and coerce a numeric value against _NUMERIC_VALIDATORS. Aborts on error."""
+    typ, lo, hi = _NUMERIC_VALIDATORS[field]
+    try:
+        val = typ(value)
+    except (TypeError, ValueError):
+        bottle.abort(400, f"{field} must be a number")
+    if not (lo <= val <= hi):
+        bottle.abort(400, f"{field} must be between {lo} and {hi}")
+    return val
 
 
 def _safe_error_message(error: Exception) -> str:
@@ -282,6 +295,138 @@ def create_app(
                 "has_llm": pinfo["llm_models"] is not None,
             })
         return {"providers": result}
+
+    # ---- Profiles ----
+
+    @app.route("/api/profiles", method="GET")
+    def get_profiles():
+        config = load_config()
+        return {"profiles": config.get("profiles", [])}
+
+    @app.route("/api/profiles", method="POST")
+    def create_profile():
+        data = bottle.request.json
+        if not data:
+            bottle.abort(400, "No JSON body")
+
+        name = (data.get("name") or "").strip()
+        if not name:
+            bottle.abort(400, "Profile name is required")
+
+        mp = (data.get("match_process") or "").strip()
+        mt = (data.get("match_title") or "").strip()
+        if not mp and not mt:
+            bottle.abort(400, "At least one match field (process or title) is required")
+
+        temp = data.get("temperature")
+        if temp is not None:
+            temp = _validate_numeric("temperature", temp)
+
+        profile = {
+            "id": uuid.uuid4().hex[:8],
+            "name": name,
+            "match_process": mp,
+            "match_title": mt,
+            "system_prompt": data.get("system_prompt"),
+            "snippets": data.get("snippets"),
+            "custom_vocabulary": data.get("custom_vocabulary"),
+            "temperature": temp,
+        }
+
+        config = load_config()
+        profiles = config.get("profiles", [])
+        profiles.append(profile)
+        config["profiles"] = profiles
+        save_config(config)
+
+        if on_config_saved:
+            on_config_saved()
+
+        return {"status": "ok", "profile": profile}
+
+    # Register reorder BEFORE the <id> route so "reorder" isn't captured as an id
+    @app.route("/api/profiles/reorder", method="POST")
+    def reorder_profiles():
+        data = bottle.request.json
+        if not data or "order" not in data:
+            bottle.abort(400, "Missing 'order' field")
+
+        order = data["order"]
+        if not isinstance(order, list):
+            bottle.abort(400, "'order' must be a list of profile IDs")
+
+        config = load_config()
+        profiles = config.get("profiles", [])
+        by_id = {p["id"]: p for p in profiles}
+
+        # Reorder: only include IDs that exist, append any missing at the end
+        reordered = [by_id[pid] for pid in order if pid in by_id]
+        order_set = set(order)
+        remaining = [p for p in profiles if p["id"] not in order_set]
+        config["profiles"] = reordered + remaining
+        save_config(config)
+
+        if on_config_saved:
+            on_config_saved()
+
+        return {"status": "ok"}
+
+    @app.route("/api/profiles/<profile_id>", method="PUT")
+    def update_profile(profile_id):
+        data = bottle.request.json
+        if not data:
+            bottle.abort(400, "No JSON body")
+
+        config = load_config()
+        profiles = config.get("profiles", [])
+        profile = next((p for p in profiles if p["id"] == profile_id), None)
+        if not profile:
+            bottle.abort(404, "Profile not found")
+
+        if "name" in data:
+            name = (data["name"] or "").strip()
+            if not name:
+                bottle.abort(400, "Profile name is required")
+            profile["name"] = name
+
+        if "match_process" in data or "match_title" in data:
+            mp = (data.get("match_process", profile.get("match_process")) or "").strip()
+            mt = (data.get("match_title", profile.get("match_title")) or "").strip()
+            if not mp and not mt:
+                bottle.abort(400, "At least one match field is required")
+            profile["match_process"] = mp
+            profile["match_title"] = mt
+
+        if "temperature" in data:
+            temp = data["temperature"]
+            if temp is not None:
+                temp = _validate_numeric("temperature", temp)
+            profile["temperature"] = temp
+
+        # Override fields that can be null (inherit) or a value
+        for field in ("system_prompt", "snippets", "custom_vocabulary"):
+            if field in data:
+                profile[field] = data[field]
+
+        config["profiles"] = profiles
+        save_config(config)
+
+        if on_config_saved:
+            on_config_saved()
+
+        return {"status": "ok", "profile": profile}
+
+    @app.route("/api/profiles/<profile_id>", method="DELETE")
+    def delete_profile(profile_id):
+        config = load_config()
+        profiles = config.get("profiles", [])
+        config["profiles"] = [p for p in profiles if p["id"] != profile_id]
+        save_config(config)
+
+        if on_config_saved:
+            on_config_saved()
+
+        return {"status": "ok"}
 
     # ---- About ----
 

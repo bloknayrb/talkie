@@ -15,11 +15,12 @@ Talkie is a local, Windows-based dictation utility designed to be a lightweight 
 - **Context Awareness**: Automatically captures surrounding text to ensure perfect capitalization and spacing.
 - **Multi-Provider Support**: Supports OpenAI (Whisper), Groq (Whisper-v3), and Anthropic (Claude) for STT and LLM processing.
 - **Model Selection**: Choose STT and LLM models directly from Settings — no config file editing needed.
+- **Per-App Profiles**: Configure different system prompts, snippets, vocabulary, and temperature per application — Talkie automatically applies the matching profile based on the focused window.
 - **Custom Snippets**: Define short abbreviations that expand into full text via a structured editor (e.g., `br` -> `Best regards`).
 - **Custom Vocabulary**: Ensure specific names, brands, or technical terms are always spelled correctly.
 - **Audio Feedback**: Soft pop sounds for recording start/stop — quick 30ms taps instead of harsh beeps.
 - **First-Run Onboarding**: Auto-opens Settings with a Quick Start guide and progress badges when API keys are missing.
-- **Modern Settings UI**: Dark-themed web interface (Bottle web server + browser) with sidebar navigation — Providers, API Keys, Hotkey, Snippets, Vocabulary, and About sections.
+- **Modern Settings UI**: Dark-themed web interface (Bottle web server + browser) with sidebar navigation — Providers, API Keys, Hotkey, Snippets, Vocabulary, Profiles, and About sections.
 - **Secure Key Storage**: API keys stored in Windows Credential Manager, never in config files.
 - **Error Notifications**: Windows toast notifications for pipeline errors and discarded recordings.
 - **Single Instance**: Only one copy can run at a time — prevents duplicate hotkey hooks.
@@ -98,6 +99,7 @@ talkie_modules/
     api_client.py                # STT and LLM API calls via official SDKs
     audio_io.py                  # Mic recording and soft pop/tap generation
     context_capture.py           # Captures surrounding text via Windows UI Automation
+    profile_matcher.py           # Resolves and applies per-app profiles at dictation time
     hotkey_manager.py            # Global key hold/release listener
     text_injector.py             # Pastes processed text via clipboard
     settings_server.py           # Bottle REST API for settings web UI

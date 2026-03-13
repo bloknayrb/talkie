@@ -3,7 +3,6 @@
 ## Next Up
 
 - **Dictation history** — scrollable log of recent transcriptions with copy/re-inject
-- **Per-app profiles** — different LLM prompts or snippet sets depending on the focused app (Slack vs. VS Code vs. email)
 - **Streaming transcription** — show partial text as you speak instead of waiting for release
 - **Auto-update checker** — notify when a new GitHub release is available
 - **Input device selector** — pick which microphone to use from Settings

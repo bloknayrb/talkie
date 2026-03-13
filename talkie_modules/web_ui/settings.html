@@ -34,6 +34,9 @@
                 <li class="nav-item" data-section="systemprompt">
                     <span class="nav-icon">&#9998;</span> System Prompt
                 </li>
+                <li class="nav-item" data-section="profiles">
+                    <span class="nav-icon">&#128100;</span> Profiles
+                </li>
                 <li class="nav-item" data-section="about">
                     <span class="nav-icon">&#8505;</span> About
                 </li>
@@ -200,6 +203,85 @@
                     <button class="btn btn-primary" id="save-prompt">Save</button>
                     <button class="btn" id="reset-prompt">Reset to Default</button>
                     <span class="save-status" id="prompt-status"></span>
+                </div>
+            </section>
+
+            <!-- Profiles -->
+            <section id="profiles" class="section">
+                <h2>Profiles</h2>
+                <p class="hint">Configure different dictation behavior per application. Profiles are matched in order — first match wins.</p>
+
+                <div id="profiles-list-view">
+                    <div id="profiles-list"></div>
+                    <button class="btn btn-primary" id="add-profile">+ New Profile</button>
+                </div>
+
+                <div id="profiles-edit-view" style="display:none;">
+                    <h3 id="profile-edit-title">Edit Profile</h3>
+                    <input type="hidden" id="profile-edit-id">
+
+                    <div class="form-group">
+                        <div class="form-row">
+                            <label for="profile-name">Name:</label>
+                            <input type="text" id="profile-name" placeholder="e.g. VS Code">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <h4>Match Rules</h4>
+                        <p class="hint">Process name is an exact match (e.g. "Code.exe"). Window title is a substring match. UWP/Store apps show as "ApplicationFrameHost.exe" — use title match for those.</p>
+                        <div class="form-row">
+                            <label for="profile-match-process">Process Name:</label>
+                            <input type="text" id="profile-match-process" placeholder="e.g. Code.exe">
+                        </div>
+                        <div class="form-row">
+                            <label for="profile-match-title">Window Title:</label>
+                            <input type="text" id="profile-match-title" placeholder="e.g. Visual Studio Code">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <h4>Overrides</h4>
+                        <p class="hint">Unchecked fields inherit from global settings.</p>
+
+                        <div class="override-toggle">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="profile-override-prompt"> System Prompt
+                            </label>
+                            <textarea id="profile-system-prompt" rows="8" disabled placeholder="Inherited from global"></textarea>
+                        </div>
+
+                        <div class="override-toggle">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="profile-override-snippets"> Snippets
+                            </label>
+                            <div id="profile-snippets-list" class="override-disabled"></div>
+                            <button class="btn btn-sm" id="profile-add-snippet" disabled>+ Add Snippet</button>
+                        </div>
+
+                        <div class="override-toggle">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="profile-override-vocab"> Custom Vocabulary
+                            </label>
+                            <textarea id="profile-vocabulary" rows="4" disabled placeholder="Inherited from global"></textarea>
+                        </div>
+
+                        <div class="override-toggle">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="profile-override-temp"> Temperature
+                            </label>
+                            <div class="slider-row">
+                                <input type="range" id="profile-temperature" min="0" max="2.0" step="0.1" disabled>
+                                <span id="profile-temperature-value">0.0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="prompt-actions">
+                        <button class="btn btn-primary" id="profile-save">Save Profile</button>
+                        <button class="btn" id="profile-cancel">Cancel</button>
+                        <span class="save-status" id="profile-status"></span>
+                    </div>
                 </div>
             </section>
 

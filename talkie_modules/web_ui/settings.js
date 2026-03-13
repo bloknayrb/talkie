@@ -105,6 +105,9 @@ function populateUI() {
     document.getElementById('temperature').value = temp;
     document.getElementById('temperature-value').textContent = parseFloat(temp).toFixed(1);
 
+    // Profiles
+    loadProfiles();
+
     // Quick Start badges
     updateQuickStartBadges();
 
@@ -366,8 +369,8 @@ function populateSnippets() {
     }
 }
 
-function addSnippetRow(trigger = '', expansion = '') {
-    const container = document.getElementById('snippets-list');
+function createSnippetRow(containerId, trigger = '', expansion = '') {
+    const container = document.getElementById(containerId);
     const row = document.createElement('div');
     row.className = 'snippet-row';
 
@@ -392,6 +395,10 @@ function addSnippetRow(trigger = '', expansion = '') {
     row.appendChild(expansionInput);
     row.appendChild(deleteBtn);
     container.appendChild(row);
+}
+
+function addSnippetRow(trigger = '', expansion = '') {
+    createSnippetRow('snippets-list', trigger, expansion);
 }
 
 document.getElementById('add-snippet').addEventListener('click', () => addSnippetRow());
@@ -525,6 +532,277 @@ function showSection(sectionId) {
         s.classList.toggle('active', s.id === sectionId);
     });
 }
+
+// ---- Profiles ----
+
+let profilesList = [];
+
+async function loadProfiles(fromServer = false) {
+    if (fromServer) {
+        const data = await api('GET', '/api/profiles');
+        profilesList = data.profiles || [];
+    } else {
+        profilesList = config.profiles || [];
+    }
+    renderProfilesList();
+}
+
+function renderProfilesList() {
+    const container = document.getElementById('profiles-list');
+    container.innerHTML = '';
+
+    if (profilesList.length === 0) {
+        const empty = document.createElement('p');
+        empty.className = 'hint';
+        empty.textContent = 'No profiles configured. All apps use global settings.';
+        container.appendChild(empty);
+        return;
+    }
+
+    profilesList.forEach((profile, idx) => {
+        const card = document.createElement('div');
+        card.className = 'profile-card';
+
+        // Reorder buttons
+        const reorder = document.createElement('div');
+        reorder.className = 'profile-reorder-btns';
+        const upBtn = document.createElement('button');
+        upBtn.className = 'btn btn-sm';
+        upBtn.textContent = '\u25B2';
+        upBtn.disabled = idx === 0;
+        upBtn.addEventListener('click', () => moveProfile(idx, -1));
+        const downBtn = document.createElement('button');
+        downBtn.className = 'btn btn-sm';
+        downBtn.textContent = '\u25BC';
+        downBtn.disabled = idx === profilesList.length - 1;
+        downBtn.addEventListener('click', () => moveProfile(idx, 1));
+        reorder.appendChild(upBtn);
+        reorder.appendChild(downBtn);
+
+        // Info
+        const info = document.createElement('div');
+        info.className = 'profile-card-info';
+        const name = document.createElement('div');
+        name.className = 'profile-card-name';
+        name.textContent = profile.name;
+        const match = document.createElement('div');
+        match.className = 'profile-card-match';
+        const parts = [];
+        if (profile.match_process) parts.push('process: ' + profile.match_process);
+        if (profile.match_title) parts.push('title: "' + profile.match_title + '"');
+        match.textContent = parts.join(' + ') || 'no match rules';
+        info.appendChild(name);
+        info.appendChild(match);
+
+        // Actions
+        const actions = document.createElement('div');
+        actions.className = 'profile-card-actions';
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-sm';
+        editBtn.textContent = 'Edit';
+        editBtn.addEventListener('click', () => editProfile(profile));
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-sm btn-danger';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.addEventListener('click', () => deleteProfile(profile.id));
+        actions.appendChild(editBtn);
+        actions.appendChild(deleteBtn);
+
+        card.appendChild(reorder);
+        card.appendChild(info);
+        card.appendChild(actions);
+        container.appendChild(card);
+    });
+}
+
+async function moveProfile(idx, direction) {
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= profilesList.length) return;
+
+    // Swap in local list
+    [profilesList[idx], profilesList[newIdx]] = [profilesList[newIdx], profilesList[idx]];
+
+    // Send new order to backend
+    const order = profilesList.map(p => p.id);
+    await api('POST', '/api/profiles/reorder', { order });
+    renderProfilesList();
+}
+
+async function deleteProfile(id) {
+    await api('DELETE', `/api/profiles/${id}`);
+    profilesList = profilesList.filter(p => p.id !== id);
+    renderProfilesList();
+}
+
+function editProfile(profile) {
+    document.getElementById('profiles-list-view').style.display = 'none';
+    document.getElementById('profiles-edit-view').style.display = 'block';
+    document.getElementById('profile-edit-title').textContent = profile ? 'Edit Profile' : 'New Profile';
+    document.getElementById('profile-edit-id').value = profile ? profile.id : '';
+
+    document.getElementById('profile-name').value = profile ? profile.name : '';
+    document.getElementById('profile-match-process').value = profile ? (profile.match_process || '') : '';
+    document.getElementById('profile-match-title').value = profile ? (profile.match_title || '') : '';
+
+    // System prompt override
+    const hasPrompt = profile && profile.system_prompt != null;
+    document.getElementById('profile-override-prompt').checked = hasPrompt;
+    const promptTextarea = document.getElementById('profile-system-prompt');
+    promptTextarea.disabled = !hasPrompt;
+    promptTextarea.value = hasPrompt ? profile.system_prompt : '';
+    if (!hasPrompt) promptTextarea.placeholder = 'Inherited from global';
+
+    // Snippets override
+    const hasSnippets = profile && profile.snippets != null;
+    document.getElementById('profile-override-snippets').checked = hasSnippets;
+    const snippetsList = document.getElementById('profile-snippets-list');
+    const addSnippetBtn = document.getElementById('profile-add-snippet');
+    snippetsList.classList.toggle('override-disabled', !hasSnippets);
+    addSnippetBtn.disabled = !hasSnippets;
+    renderProfileSnippets(hasSnippets ? profile.snippets : {});
+
+    // Vocabulary override
+    const hasVocab = profile && profile.custom_vocabulary != null;
+    document.getElementById('profile-override-vocab').checked = hasVocab;
+    const vocabTextarea = document.getElementById('profile-vocabulary');
+    vocabTextarea.disabled = !hasVocab;
+    vocabTextarea.value = hasVocab ? (profile.custom_vocabulary || []).join(', ') : '';
+    if (!hasVocab) vocabTextarea.placeholder = 'Inherited from global';
+
+    // Temperature override
+    const hasTemp = profile && profile.temperature != null;
+    document.getElementById('profile-override-temp').checked = hasTemp;
+    const tempSlider = document.getElementById('profile-temperature');
+    tempSlider.disabled = !hasTemp;
+    const tempVal = hasTemp ? profile.temperature : (config.temperature || 0);
+    tempSlider.value = tempVal;
+    document.getElementById('profile-temperature-value').textContent = parseFloat(tempVal).toFixed(1);
+
+    document.getElementById('profile-status').textContent = '';
+}
+
+function renderProfileSnippets(snippets) {
+    const container = document.getElementById('profile-snippets-list');
+    container.innerHTML = '';
+    for (const [trigger, expansion] of Object.entries(snippets || {})) {
+        addProfileSnippetRow(trigger, expansion);
+    }
+}
+
+function addProfileSnippetRow(trigger = '', expansion = '') {
+    createSnippetRow('profile-snippets-list', trigger, expansion);
+}
+
+// Override toggle handlers
+document.getElementById('profile-override-prompt').addEventListener('change', e => {
+    const textarea = document.getElementById('profile-system-prompt');
+    textarea.disabled = !e.target.checked;
+    if (e.target.checked && !textarea.value) {
+        // Pre-populate with global system prompt
+        textarea.value = config.system_prompt || defaultSystemPrompt;
+    }
+    if (!e.target.checked) {
+        textarea.placeholder = 'Inherited from global';
+    }
+});
+
+document.getElementById('profile-override-snippets').addEventListener('change', e => {
+    const list = document.getElementById('profile-snippets-list');
+    const btn = document.getElementById('profile-add-snippet');
+    list.classList.toggle('override-disabled', !e.target.checked);
+    btn.disabled = !e.target.checked;
+    if (e.target.checked && list.children.length === 0) {
+        addProfileSnippetRow();
+    }
+});
+
+document.getElementById('profile-override-vocab').addEventListener('change', e => {
+    const textarea = document.getElementById('profile-vocabulary');
+    textarea.disabled = !e.target.checked;
+    if (!e.target.checked) {
+        textarea.placeholder = 'Inherited from global';
+    }
+});
+
+document.getElementById('profile-override-temp').addEventListener('change', e => {
+    document.getElementById('profile-temperature').disabled = !e.target.checked;
+});
+
+document.getElementById('profile-temperature').addEventListener('input', e => {
+    document.getElementById('profile-temperature-value').textContent = parseFloat(e.target.value).toFixed(1);
+});
+
+document.getElementById('profile-add-snippet').addEventListener('click', () => addProfileSnippetRow());
+
+document.getElementById('add-profile').addEventListener('click', () => editProfile(null));
+
+document.getElementById('profile-cancel').addEventListener('click', () => {
+    document.getElementById('profiles-edit-view').style.display = 'none';
+    document.getElementById('profiles-list-view').style.display = 'block';
+});
+
+document.getElementById('profile-save').addEventListener('click', async () => {
+    const statusEl = document.getElementById('profile-status');
+    const id = document.getElementById('profile-edit-id').value;
+    const name = document.getElementById('profile-name').value.trim();
+    const matchProcess = document.getElementById('profile-match-process').value.trim();
+    const matchTitle = document.getElementById('profile-match-title').value.trim();
+
+    if (!name) {
+        statusEl.textContent = 'Name is required';
+        statusEl.className = 'save-status error';
+        return;
+    }
+    if (!matchProcess && !matchTitle) {
+        statusEl.textContent = 'At least one match field is required';
+        statusEl.className = 'save-status error';
+        return;
+    }
+
+    const payload = {
+        name,
+        match_process: matchProcess,
+        match_title: matchTitle,
+        system_prompt: document.getElementById('profile-override-prompt').checked
+            ? document.getElementById('profile-system-prompt').value
+            : null,
+        snippets: null,
+        custom_vocabulary: document.getElementById('profile-override-vocab').checked
+            ? document.getElementById('profile-vocabulary').value.split(',').map(w => w.trim()).filter(w => w)
+            : null,
+        temperature: document.getElementById('profile-override-temp').checked
+            ? parseFloat(document.getElementById('profile-temperature').value)
+            : null,
+    };
+
+    // Collect snippets if override is enabled
+    if (document.getElementById('profile-override-snippets').checked) {
+        const rows = document.querySelectorAll('#profile-snippets-list .snippet-row');
+        const snippets = {};
+        for (const row of rows) {
+            const t = row.querySelector('.trigger').value.trim();
+            const e = row.querySelector('.expansion').value.trim();
+            if (t) snippets[t] = e;
+        }
+        payload.snippets = snippets;
+    }
+
+    let result;
+    if (id) {
+        result = await api('PUT', `/api/profiles/${id}`, payload);
+    } else {
+        result = await api('POST', '/api/profiles', payload);
+    }
+
+    if (result.status === 'ok') {
+        await loadProfiles(true);
+        document.getElementById('profiles-edit-view').style.display = 'none';
+        document.getElementById('profiles-list-view').style.display = 'block';
+    } else {
+        statusEl.textContent = result.message || 'Save failed';
+        statusEl.className = 'save-status error';
+    }
+});
 
 // ---- Cleanup ----
 

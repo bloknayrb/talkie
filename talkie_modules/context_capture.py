@@ -2,6 +2,7 @@
 
 import ctypes
 import ctypes.wintypes
+import os
 import time
 
 import pyautogui
@@ -12,19 +13,60 @@ from talkie_modules.logger import get_logger
 
 logger = get_logger("context")
 
+# Win32 constants for process querying
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
-def get_target_hwnd() -> int:
-    """Return HWND of the current foreground window. Called at hotkey press time."""
+
+def get_target_window() -> tuple[int, str, str]:
+    """Return (hwnd, process_name, window_title) for the current foreground window.
+
+    Called at hotkey press time. Falls back gracefully: if process name
+    detection fails (e.g. elevated process), returns empty string for
+    process_name so title matching still works.
+    """
     try:
         hwnd = ctypes.windll.user32.GetForegroundWindow()
-        if hwnd:
-            buf = ctypes.create_unicode_buffer(256)
-            ctypes.windll.user32.GetWindowTextW(hwnd, buf, 256)
-            logger.debug("Captured target HWND=%d title=%r", hwnd, buf.value)
-        return hwnd if hwnd else 0
+        if not hwnd:
+            return (0, "", "")
+
+        # Get window title
+        buf = ctypes.create_unicode_buffer(256)
+        ctypes.windll.user32.GetWindowTextW(hwnd, buf, 256)
+        window_title = buf.value
+
+        # Get process name from HWND
+        process_name = ""
+        pid = ctypes.wintypes.DWORD()
+        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value:
+            handle = ctypes.windll.kernel32.OpenProcess(
+                _PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value
+            )
+            if handle:
+                try:
+                    exe_buf = ctypes.create_unicode_buffer(260)
+                    size = ctypes.wintypes.DWORD(260)
+                    if ctypes.windll.kernel32.QueryFullProcessImageNameW(
+                        handle, 0, exe_buf, ctypes.byref(size)
+                    ):
+                        process_name = os.path.basename(exe_buf.value)
+                finally:
+                    ctypes.windll.kernel32.CloseHandle(handle)
+
+        logger.debug(
+            "Captured target HWND=%d process=%r title=%r",
+            hwnd, process_name, window_title,
+        )
+        return (hwnd, process_name, window_title)
     except Exception as e:
-        logger.warning("GetForegroundWindow failed: %s", e)
-        return 0
+        logger.warning("get_target_window failed: %s", e)
+        return (0, "", "")
+
+
+def get_target_hwnd() -> int:
+    """Return HWND of the current foreground window. Thin wrapper for backwards compat."""
+    hwnd, _, _ = get_target_window()
+    return hwnd
 
 
 def get_context(use_fallback: bool = True) -> str:

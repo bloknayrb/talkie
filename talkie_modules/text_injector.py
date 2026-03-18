@@ -17,17 +17,13 @@ _FOCUS_RESTORE_DELAY = 0.075
 
 # Win32 constants for _restore_focus
 _SW_RESTORE = 9
-_VK_MENU = 0x12
-_KEYEVENTF_EXTENDEDKEY = 0x0001
-_KEYEVENTF_KEYUP = 0x0002
 
 
 def _restore_focus(hwnd: int) -> bool:
     """Restore foreground focus to the given HWND.
 
-    Uses the keybd_event Alt trick to acquire the foreground lock from a
-    background thread, then AttachThreadInput to the *foreground* thread
-    (not the target) to borrow its lock before calling SetForegroundWindow.
+    Uses AttachThreadInput to borrow the foreground thread's input queue,
+    then calls SetForegroundWindow.
 
     Returns True on success, False on failure (graceful fallback).
     """
@@ -53,16 +49,12 @@ def _restore_focus(hwnd: int) -> bool:
     fg_hwnd = user32.GetForegroundWindow()
     fg_tid = user32.GetWindowThreadProcessId(fg_hwnd, None) if fg_hwnd else 0
 
-    # Alt key trick: synthetic Alt press/release acquires the foreground lock
-    # for our process even from a background thread. This is the canonical
-    # pattern used by AutoHotkey/AutoIt for 20+ years.
-    user32.keybd_event(_VK_MENU, 0, _KEYEVENTF_EXTENDEDKEY, 0)
-    user32.keybd_event(_VK_MENU, 0, _KEYEVENTF_EXTENDEDKEY | _KEYEVENTF_KEYUP, 0)
-
-    # Brief yield to let the foreground lock transfer complete
-    time.sleep(0.01)
-
-    # Attach to the foreground thread to borrow its input queue
+    # Attach to the foreground thread to borrow its input queue, which allows
+    # SetForegroundWindow to succeed from a background thread.
+    #
+    # NOTE: The old Alt key trick (keybd_event VK_MENU press/release) was removed
+    # because WinUI 3 apps (e.g. Windows 11 Notepad) interpret the synthetic Alt
+    # tap as real and show access-key hint overlays on the UI.
     attached = False
     if fg_tid and fg_tid != current_tid:
         user32.AttachThreadInput(current_tid, fg_tid, True)

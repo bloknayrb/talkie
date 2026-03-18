@@ -16,6 +16,7 @@ Talkie is a local, Windows-based dictation utility designed to be a lightweight 
 - **Multi-Provider Support**: Supports OpenAI (Whisper), Groq (Whisper-v3), and Anthropic (Claude) for STT and LLM processing.
 - **Model Selection**: Choose STT and LLM models directly from Settings — no config file editing needed.
 - **Per-App Profiles**: Configure different system prompts, snippets, vocabulary, and temperature per application — Talkie automatically applies the matching profile based on the focused window.
+- **Built-in Profile Templates**: 6 ready-made templates for Email, Chat, Code/Terminal, Documents, Notes, and Browser — each with a tailored system prompt, default snippets, vocabulary, and pre-filled process names. Add templates from Settings with one click, then customize as needed.
 - **Custom Snippets**: Define short abbreviations that expand into full text via a structured editor (e.g., `br` -> `Best regards`).
 - **Custom Vocabulary**: Ensure specific names, brands, or technical terms are always spelled correctly.
 - **Audio Feedback**: Soft pop sounds for recording start/stop — quick 30ms taps instead of harsh beeps.
@@ -100,6 +101,7 @@ talkie_modules/
     audio_io.py                  # Mic recording and soft pop/tap generation
     context_capture.py           # Captures surrounding text via Windows UI Automation
     profile_matcher.py           # Resolves and applies per-app profiles at dictation time
+    profile_templates.py         # Built-in profile templates (Email, Chat, Code, etc.)
     hotkey_manager.py            # Global key hold/release listener
     text_injector.py             # Pastes processed text via clipboard
     settings_server.py           # Bottle REST API for settings web UI
@@ -122,6 +124,7 @@ tests/
     test_text_injector.py        # Focus restoration and text injection
     test_context_stripping.py    # Prior-injection removal from context
     test_settings_server.py      # Settings API key masking and routes
+    test_profile_templates.py    # Template definitions and apply logic
 ```
 
 ## License

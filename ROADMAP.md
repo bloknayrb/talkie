@@ -15,5 +15,5 @@
 - **Multi-language support** — language selector for non-English dictation
 - **Tray menu quick-toggle** — switch providers/models from the right-click menu without opening Settings
 - **macOS / Linux port** — replace Win32-specific code (UI Automation, layered windows, credential manager) with cross-platform alternatives
-- **Custom LLM system prompts** — user-editable prompt for how the LLM processes dictation (tone, formatting rules)
+- ~~**Custom LLM system prompts**~~ — ✅ Done (v1.1 per-app profiles + v1.2 built-in templates)
 - **Plugin system** — hooks for custom post-processing (auto-translate, summarize, format as markdown)

@@ -1,6 +1,6 @@
 """Built-in profile templates for common dictation contexts."""
 
-from typing import Optional
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # System prompts — one per template, standalone (not layered on base prompt)
@@ -181,7 +181,7 @@ BROWSER_PROMPT = (
 # Template definitions
 # ---------------------------------------------------------------------------
 
-PROFILE_TEMPLATES: list[dict] = [
+PROFILE_TEMPLATES: list[dict[str, Any]] = [
     {
         "id": "email",
         "name": "Email",
@@ -315,7 +315,7 @@ PROFILE_TEMPLATES: list[dict] = [
 ]
 
 
-def get_template(template_id: str) -> Optional[dict]:
+def get_template(template_id: str) -> dict[str, Any] | None:
     """Return the template with the given id, or None if not found."""
     for t in PROFILE_TEMPLATES:
         if t["id"] == template_id:

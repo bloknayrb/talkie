@@ -212,8 +212,39 @@
                 <p class="hint">Configure different dictation behavior per application. Profiles are matched in order — first match wins.</p>
 
                 <div id="profiles-list-view">
-                    <div id="profiles-list"></div>
-                    <button class="btn btn-primary" id="add-profile">+ New Profile</button>
+                    <div id="profiles-empty-state" style="display:none;">
+                        <div class="empty-state">
+                            <p class="empty-state-text">No profiles yet. Profiles let you customize dictation per app.</p>
+                            <button class="btn btn-primary btn-lg" id="empty-state-templates">Get Started with a Template</button>
+                            <p class="empty-state-secondary"><a href="#" id="empty-state-manual">Or create a profile manually</a></p>
+                        </div>
+                    </div>
+                    <div id="profiles-has-profiles" style="display:none;">
+                        <div id="profiles-list"></div>
+                        <div class="profile-actions-row">
+                            <button class="btn btn-primary" id="add-profile">+ New Profile</button>
+                            <button class="btn" id="add-from-template">Add from Template</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="profiles-template-view" style="display:none;">
+                    <h3>Choose a Template</h3>
+                    <p class="hint">Select a category, then pick which apps to add profiles for.</p>
+                    <div id="template-cards"></div>
+                    <div id="template-app-picker" style="display:none;">
+                        <h4 id="template-picker-title"></h4>
+                        <p class="hint" id="template-picker-desc"></p>
+                        <div id="template-app-list"></div>
+                        <div class="prompt-actions">
+                            <button class="btn btn-primary" id="template-apply">Add Selected</button>
+                            <button class="btn" id="template-back-to-cards">Back</button>
+                            <span class="save-status" id="template-status"></span>
+                        </div>
+                    </div>
+                    <div class="prompt-actions" id="template-cards-actions">
+                        <button class="btn" id="template-cancel">Back to Profiles</button>
+                    </div>
                 </div>
 
                 <div id="profiles-edit-view" style="display:none;">
@@ -280,6 +311,7 @@
                     <div class="prompt-actions">
                         <button class="btn btn-primary" id="profile-save">Save Profile</button>
                         <button class="btn" id="profile-cancel">Cancel</button>
+                        <button class="btn" id="profile-reset-template" style="display:none;">Reset to Template Defaults</button>
                         <span class="save-status" id="profile-status"></span>
                     </div>
                 </div>

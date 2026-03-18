@@ -4,6 +4,7 @@ Runs on a daemon thread, serving the settings SPA and handling config API calls.
 Binds to 127.0.0.1:0 (OS-assigned port) to avoid conflicts.
 """
 
+import copy
 import os
 import threading
 import uuid
@@ -27,6 +28,11 @@ from talkie_modules.providers import (
     KEY_PREFIXES,
     STT_MODELS,
     LLM_MODELS,
+)
+from talkie_modules.profile_templates import (
+    PROFILE_TEMPLATES,
+    get_template,
+    apply_template_apps,
 )
 
 logger = get_logger("settings_server")
@@ -434,6 +440,89 @@ def create_app(
     def about():
         version = get_version() if get_version else "unknown"
         return {"version": version}
+
+    # ---- Profile Templates ----
+
+    @app.route("/api/profile-templates", method="GET")
+    def get_profile_templates():
+        """Return template metadata for the picker UI."""
+        return {"templates": [
+            {
+                "id": t["id"],
+                "name": t["name"],
+                "description": t["description"],
+                "icon": t["icon"],
+                "apps": [
+                    {
+                        "id": a["id"],
+                        "name": a["name"],
+                        "match_process": a["match_process"],
+                        "match_title": a["match_title"],
+                    }
+                    for a in t["apps"]
+                ],
+            }
+            for t in PROFILE_TEMPLATES
+        ]}
+
+    @app.route("/api/profile-templates/<template_id>/apply", method="POST")
+    def apply_template(template_id):
+        """Create profiles from a template for selected apps."""
+        data = bottle.request.json
+        if not data or "app_ids" not in data:
+            bottle.abort(400, "Missing 'app_ids' field")
+
+        app_ids = data["app_ids"]
+        if not isinstance(app_ids, list):
+            bottle.abort(400, "'app_ids' must be a list")
+
+        template = get_template(template_id)
+        if not template:
+            bottle.abort(404, f"Template not found: {template_id}")
+
+        config = load_config()
+        profiles = config.get("profiles", [])
+
+        result = apply_template_apps(template, app_ids, profiles)
+
+        if result["created"]:
+            profiles.extend(result["created"])
+            config["profiles"] = profiles
+            save_config(config)
+
+            if on_config_saved:
+                on_config_saved()
+
+        return {
+            "status": "ok",
+            "created": result["created"],
+            "skipped": result["skipped"],
+        }
+
+    @app.route("/api/profiles/<profile_id>/reset-template", method="POST")
+    def reset_profile_template(profile_id):
+        """Reset a profile to its template defaults."""
+        config = load_config()
+        profiles = config.get("profiles", [])
+        profile = next((p for p in profiles if p["id"] == profile_id), None)
+        if not profile:
+            bottle.abort(404, "Profile not found")
+
+        snapshot = profile.get("template_snapshot")
+        if not snapshot:
+            bottle.abort(400, "Profile has no template snapshot to reset from")
+
+        for field in ("system_prompt", "snippets", "custom_vocabulary", "temperature"):
+            if field in snapshot:
+                profile[field] = copy.deepcopy(snapshot[field])
+
+        config["profiles"] = profiles
+        save_config(config)
+
+        if on_config_saved:
+            on_config_saved()
+
+        return {"status": "ok", "profile": profile}
 
     return app
 

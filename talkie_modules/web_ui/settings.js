@@ -551,13 +551,17 @@ function renderProfilesList() {
     const container = document.getElementById('profiles-list');
     container.innerHTML = '';
 
+    const emptyState = document.getElementById('profiles-empty-state');
+    const hasProfiles = document.getElementById('profiles-has-profiles');
+
     if (profilesList.length === 0) {
-        const empty = document.createElement('p');
-        empty.className = 'hint';
-        empty.textContent = 'No profiles configured. All apps use global settings.';
-        container.appendChild(empty);
+        emptyState.style.display = 'block';
+        hasProfiles.style.display = 'none';
         return;
     }
+
+    emptyState.style.display = 'none';
+    hasProfiles.style.display = 'block';
 
     profilesList.forEach((profile, idx) => {
         const card = document.createElement('div');
@@ -635,6 +639,8 @@ async function deleteProfile(id) {
 }
 
 function editProfile(profile) {
+    // Hide template view if open
+    document.getElementById('profiles-template-view').style.display = 'none';
     document.getElementById('profiles-list-view').style.display = 'none';
     document.getElementById('profiles-edit-view').style.display = 'block';
     document.getElementById('profile-edit-title').textContent = profile ? 'Edit Profile' : 'New Profile';
@@ -679,6 +685,11 @@ function editProfile(profile) {
     document.getElementById('profile-temperature-value').textContent = parseFloat(tempVal).toFixed(1);
 
     document.getElementById('profile-status').textContent = '';
+
+    // Show/hide reset button based on template_snapshot
+    const resetBtn = document.getElementById('profile-reset-template');
+    resetBtn.style.display = (profile && profile.template_snapshot) ? 'inline-block' : 'none';
+    if (profile) resetBtn.dataset.profileId = profile.id;
 }
 
 function renderProfileSnippets(snippets) {
@@ -803,6 +814,194 @@ document.getElementById('profile-save').addEventListener('click', async () => {
         statusEl.className = 'save-status error';
     }
 });
+
+document.getElementById('profile-reset-template').addEventListener('click', async () => {
+    if (!confirm('Reset this profile to its original template settings? Your customizations will be lost.')) return;
+    const profileId = document.getElementById('profile-reset-template').dataset.profileId;
+    const result = await api('POST', `/api/profiles/${profileId}/reset-template`);
+    if (result.status === 'ok') {
+        await loadProfiles(true);
+        editProfile(result.profile);
+        const statusEl = document.getElementById('profile-status');
+        statusEl.textContent = 'Reset to template defaults';
+        statusEl.className = 'save-status ok';
+        setTimeout(() => { statusEl.textContent = ''; }, 3000);
+    }
+});
+
+// ---- Profile Templates ----
+
+let templatesList = [];
+
+const templateIconMap = {
+    envelope: '\u2709',
+    chat: '\uD83D\uDCAC',
+    code: '\uD83D\uDCBB',
+    document: '\uD83D\uDCC4',
+    notes: '\uD83D\uDCDD',
+    browser: '\uD83C\uDF10',
+};
+
+async function loadTemplates() {
+    const data = await api('GET', '/api/profile-templates');
+    templatesList = data.templates || [];
+}
+
+async function showTemplateView() {
+    if (templatesList.length === 0) await loadTemplates();
+    document.getElementById('profiles-list-view').style.display = 'none';
+    document.getElementById('profiles-edit-view').style.display = 'none';
+    document.getElementById('profiles-template-view').style.display = 'block';
+    document.getElementById('template-app-picker').style.display = 'none';
+    document.getElementById('template-cards').style.display = 'block';
+    document.getElementById('template-cards-actions').style.display = 'block';
+    renderTemplateCards();
+}
+
+function hideTemplateView() {
+    document.getElementById('profiles-template-view').style.display = 'none';
+    document.getElementById('profiles-list-view').style.display = 'block';
+}
+
+function renderTemplateCards() {
+    const container = document.getElementById('template-cards');
+    container.innerHTML = '';
+
+    for (const t of templatesList) {
+        const card = document.createElement('div');
+        card.className = 'template-card';
+
+        const icon = document.createElement('div');
+        icon.className = 'template-card-icon';
+        icon.textContent = templateIconMap[t.icon] || '\u2699';
+
+        const info = document.createElement('div');
+        info.className = 'template-card-info';
+        const name = document.createElement('div');
+        name.className = 'template-card-name';
+        name.textContent = t.name;
+        const desc = document.createElement('div');
+        desc.className = 'template-card-desc';
+        desc.textContent = t.description;
+        info.appendChild(name);
+        info.appendChild(desc);
+
+        const count = document.createElement('div');
+        count.className = 'template-card-count';
+        count.textContent = t.apps.length + ' apps';
+
+        card.appendChild(icon);
+        card.appendChild(info);
+        card.appendChild(count);
+
+        card.addEventListener('click', () => showTemplatePicker(t));
+        container.appendChild(card);
+    }
+}
+
+function showTemplatePicker(template) {
+    document.getElementById('template-cards').style.display = 'none';
+    document.getElementById('template-cards-actions').style.display = 'none';
+    document.getElementById('template-app-picker').style.display = 'block';
+    document.getElementById('template-picker-title').textContent = template.name;
+    document.getElementById('template-picker-desc').textContent = template.description;
+    document.getElementById('template-status').textContent = '';
+
+    const container = document.getElementById('template-app-list');
+    container.innerHTML = '';
+    container.dataset.templateId = template.id;
+
+    // Build existing keys for duplicate detection
+    const existingKeys = new Set();
+    for (const p of profilesList) {
+        const mp = (p.match_process || '').trim().toLowerCase();
+        const mt = (p.match_title || '').trim().toLowerCase();
+        existingKeys.add(mp + '|' + mt);
+    }
+
+    for (const app of template.apps) {
+        const item = document.createElement('div');
+        item.className = 'template-app-item';
+
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = app.id;
+        checkbox.dataset.appId = app.id;
+
+        // Duplicate detection using match_process + match_title
+        const appMp = (app.match_process || '').trim().toLowerCase();
+        const appMt = (app.match_title || '').trim().toLowerCase();
+        const alreadyExists = existingKeys.has(appMp + '|' + appMt);
+
+        if (alreadyExists) {
+            checkbox.disabled = true;
+            const configured = document.createElement('span');
+            configured.className = 'configured';
+            configured.textContent = '(already configured)';
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode(' ' + app.name + ' '));
+            label.appendChild(configured);
+        } else {
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode(' ' + app.name));
+        }
+
+        item.appendChild(label);
+        container.appendChild(item);
+    }
+}
+
+document.getElementById('template-apply').addEventListener('click', async () => {
+    const container = document.getElementById('template-app-list');
+    const templateId = container.dataset.templateId;
+    const statusEl = document.getElementById('template-status');
+
+    const checkboxes = container.querySelectorAll('input[type="checkbox"]:checked');
+    const appIds = Array.from(checkboxes).map(cb => cb.dataset.appId);
+
+    if (appIds.length === 0) {
+        statusEl.textContent = 'Select at least one app';
+        statusEl.className = 'save-status error';
+        return;
+    }
+
+    const result = await api('POST', `/api/profile-templates/${templateId}/apply`, { app_ids: appIds });
+
+    if (result.status === 'ok') {
+        const created = result.created ? result.created.length : 0;
+        const skipped = result.skipped ? result.skipped.length : 0;
+        let msg = `${created} profile${created !== 1 ? 's' : ''} added`;
+        if (skipped > 0) {
+            msg += `, ${skipped} skipped (already exist)`;
+        }
+        statusEl.textContent = msg;
+        statusEl.className = 'save-status ok';
+
+        await loadProfiles(true);
+        setTimeout(() => {
+            hideTemplateView();
+        }, 1500);
+    } else {
+        statusEl.textContent = result.message || 'Failed to apply template';
+        statusEl.className = 'save-status error';
+    }
+});
+
+document.getElementById('template-back-to-cards').addEventListener('click', () => {
+    document.getElementById('template-app-picker').style.display = 'none';
+    document.getElementById('template-cards').style.display = 'block';
+    document.getElementById('template-cards-actions').style.display = 'block';
+});
+
+document.getElementById('template-cancel').addEventListener('click', hideTemplateView);
+
+document.getElementById('empty-state-templates').addEventListener('click', () => showTemplateView());
+document.getElementById('empty-state-manual').addEventListener('click', (e) => {
+    e.preventDefault();
+    editProfile(null);
+});
+document.getElementById('add-from-template').addEventListener('click', () => showTemplateView());
 
 // ---- Cleanup ----
 

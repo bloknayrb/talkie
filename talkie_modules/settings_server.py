@@ -4,6 +4,7 @@ Runs on a daemon thread, serving the settings SPA and handling config API calls.
 Binds to 127.0.0.1:0 (OS-assigned port) to avoid conflicts.
 """
 
+import copy
 import os
 import threading
 import uuid
@@ -513,7 +514,7 @@ def create_app(
 
         for field in ("system_prompt", "snippets", "custom_vocabulary", "temperature"):
             if field in snapshot:
-                profile[field] = snapshot[field]
+                profile[field] = copy.deepcopy(snapshot[field])
 
         config["profiles"] = profiles
         save_config(config)

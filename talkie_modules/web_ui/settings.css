@@ -697,10 +697,3 @@ input[type="range"] {
     font-size: 12px;
     font-style: italic;
 }
-
-.template-app-match {
-    color: var(--text-muted);
-    font-size: 11px;
-    font-family: 'Consolas', monospace;
-    margin-left: auto;
-}

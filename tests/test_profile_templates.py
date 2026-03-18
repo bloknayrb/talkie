@@ -64,29 +64,29 @@ class TestGetTemplate:
 class TestApplyTemplateApps:
     def test_creates_profiles_for_selected_apps(self) -> None:
         template = get_template("chat")
-        result = apply_template_apps(template, ["slack", "discord"], [])
+        result = apply_template_apps(template, ["chat-slack", "chat-discord"], [])
         assert len(result["created"]) == 2
         assert len(result["skipped"]) == 0
         names = {p["name"] for p in result["created"]}
-        assert "Chat / IM — Slack" in names
-        assert "Chat / IM — Discord" in names
+        assert "Chat / IM \u2014 Slack" in names
+        assert "Chat / IM \u2014 Discord" in names
 
     def test_skips_duplicate_process_match(self) -> None:
         existing = [{"match_process": "slack.exe", "match_title": ""}]
         template = get_template("chat")
-        result = apply_template_apps(template, ["slack"], existing)
+        result = apply_template_apps(template, ["chat-slack"], existing)
         assert len(result["created"]) == 0
         assert len(result["skipped"]) == 1
 
     def test_null_and_empty_string_treated_equal(self) -> None:
         existing = [{"match_process": "slack.exe", "match_title": None}]
         template = get_template("chat")
-        result = apply_template_apps(template, ["slack"], existing)
+        result = apply_template_apps(template, ["chat-slack"], existing)
         assert len(result["skipped"]) == 1
 
     def test_created_profiles_have_template_snapshot(self) -> None:
         template = get_template("email")
-        result = apply_template_apps(template, ["outlook"], [])
+        result = apply_template_apps(template, ["email-outlook"], [])
         profile = result["created"][0]
         assert profile["template_id"] == "email"
         assert "template_snapshot" in profile
@@ -94,14 +94,14 @@ class TestApplyTemplateApps:
 
     def test_snapshot_is_deep_copy(self) -> None:
         template = get_template("chat")
-        result = apply_template_apps(template, ["slack", "discord"], [])
+        result = apply_template_apps(template, ["chat-slack", "chat-discord"], [])
         result["created"][0]["snippets"]["new_key"] = "new_val"
         assert "new_key" not in result["created"][1]["snippets"]
         assert "new_key" not in result["created"][0]["template_snapshot"]["snippets"]
 
     def test_created_profiles_have_unique_ids(self) -> None:
         template = get_template("chat")
-        result = apply_template_apps(template, ["slack", "discord", "whatsapp"], [])
+        result = apply_template_apps(template, ["chat-slack", "chat-discord", "chat-whatsapp"], [])
         ids = [p["id"] for p in result["created"]]
         assert len(ids) == len(set(ids))
 

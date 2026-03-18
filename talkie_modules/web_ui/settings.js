@@ -833,12 +833,22 @@ document.getElementById('profile-reset-template').addEventListener('click', asyn
 
 let templatesList = [];
 
+const templateIconMap = {
+    envelope: '\u2709',
+    chat: '\uD83D\uDCAC',
+    code: '\uD83D\uDCBB',
+    document: '\uD83D\uDCC4',
+    notes: '\uD83D\uDCDD',
+    browser: '\uD83C\uDF10',
+};
+
 async function loadTemplates() {
     const data = await api('GET', '/api/profile-templates');
     templatesList = data.templates || [];
 }
 
-function showTemplateView() {
+async function showTemplateView() {
+    if (templatesList.length === 0) await loadTemplates();
     document.getElementById('profiles-list-view').style.display = 'none';
     document.getElementById('profiles-edit-view').style.display = 'none';
     document.getElementById('profiles-template-view').style.display = 'block';
@@ -857,22 +867,13 @@ function renderTemplateCards() {
     const container = document.getElementById('template-cards');
     container.innerHTML = '';
 
-    const iconMap = {
-        envelope: '\u2709',
-        chat: '\uD83D\uDCAC',
-        code: '\uD83D\uDCBB',
-        document: '\uD83D\uDCC4',
-        notes: '\uD83D\uDCDD',
-        browser: '\uD83C\uDF10',
-    };
-
     for (const t of templatesList) {
         const card = document.createElement('div');
         card.className = 'template-card';
 
         const icon = document.createElement('div');
         icon.className = 'template-card-icon';
-        icon.textContent = iconMap[t.icon] || '\u2699';
+        icon.textContent = templateIconMap[t.icon] || '\u2699';
 
         const info = document.createElement('div');
         info.className = 'template-card-info';
@@ -995,18 +996,12 @@ document.getElementById('template-back-to-cards').addEventListener('click', () =
 
 document.getElementById('template-cancel').addEventListener('click', hideTemplateView);
 
-document.getElementById('empty-state-templates').addEventListener('click', async () => {
-    if (templatesList.length === 0) await loadTemplates();
-    showTemplateView();
-});
+document.getElementById('empty-state-templates').addEventListener('click', () => showTemplateView());
 document.getElementById('empty-state-manual').addEventListener('click', (e) => {
     e.preventDefault();
     editProfile(null);
 });
-document.getElementById('add-from-template').addEventListener('click', async () => {
-    if (templatesList.length === 0) await loadTemplates();
-    showTemplateView();
-});
+document.getElementById('add-from-template').addEventListener('click', () => showTemplateView());
 
 // ---- Cleanup ----
 

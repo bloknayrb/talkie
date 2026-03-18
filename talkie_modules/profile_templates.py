@@ -342,11 +342,9 @@ def apply_template_apps(
         existing_keys.add((mp, mt))
 
     apps_by_id = {a["id"]: a for a in template["apps"]}
-    # Also index by short id (the part after the first "-") for convenience
-    apps_by_short_id = {a["id"].split("-", 1)[1]: a for a in template["apps"] if "-" in a["id"]}
 
     for app_id in app_ids:
-        app = apps_by_id.get(app_id) or apps_by_short_id.get(app_id)
+        app = apps_by_id.get(app_id)
         if not app:
             continue
 
@@ -360,22 +358,23 @@ def apply_template_apps(
             })
             continue
 
+        snapshot = {
+            "system_prompt": template["system_prompt"],
+            "snippets": copy.deepcopy(template["snippets"]),
+            "custom_vocabulary": copy.deepcopy(template["custom_vocabulary"]),
+            "temperature": template["temperature"],
+        }
         profile = {
             "id": uuid.uuid4().hex[:8],
             "name": f"{template['name']} \u2014 {app['name']}",
             "match_process": app["match_process"],
             "match_title": app["match_title"],
-            "system_prompt": template["system_prompt"],
-            "snippets": copy.deepcopy(template["snippets"]),
-            "custom_vocabulary": copy.deepcopy(template["custom_vocabulary"]),
-            "temperature": template["temperature"],
+            "system_prompt": snapshot["system_prompt"],
+            "snippets": copy.deepcopy(snapshot["snippets"]),
+            "custom_vocabulary": copy.deepcopy(snapshot["custom_vocabulary"]),
+            "temperature": snapshot["temperature"],
             "template_id": template["id"],
-            "template_snapshot": {
-                "system_prompt": template["system_prompt"],
-                "snippets": copy.deepcopy(template["snippets"]),
-                "custom_vocabulary": copy.deepcopy(template["custom_vocabulary"]),
-                "temperature": template["temperature"],
-            },
+            "template_snapshot": snapshot,
         }
         created.append(profile)
         existing_keys.add((mp, mt))

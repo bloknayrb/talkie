@@ -1,5 +1,7 @@
 """Built-in profile templates for common dictation contexts."""
 
+import copy
+import uuid
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -321,3 +323,61 @@ def get_template(template_id: str) -> dict[str, Any] | None:
         if t["id"] == template_id:
             return t
     return None
+
+
+def apply_template_apps(
+    template: dict[str, Any], app_ids: list[str], existing_profiles: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Create profiles from template for selected apps. Returns {created, skipped}.
+
+    Uses deep copies so profiles and snapshots are fully independent.
+    """
+    created: list[dict[str, Any]] = []
+    skipped: list[dict[str, str]] = []
+
+    existing_keys = set()
+    for p in existing_profiles:
+        mp = (p.get("match_process") or "").strip().lower()
+        mt = (p.get("match_title") or "").strip().lower()
+        existing_keys.add((mp, mt))
+
+    apps_by_id = {a["id"]: a for a in template["apps"]}
+    # Also index by short id (the part after the first "-") for convenience
+    apps_by_short_id = {a["id"].split("-", 1)[1]: a for a in template["apps"] if "-" in a["id"]}
+
+    for app_id in app_ids:
+        app = apps_by_id.get(app_id) or apps_by_short_id.get(app_id)
+        if not app:
+            continue
+
+        mp = (app["match_process"] or "").strip().lower()
+        mt = (app["match_title"] or "").strip().lower()
+
+        if (mp, mt) in existing_keys:
+            skipped.append({
+                "app_id": app_id,
+                "reason": f"Profile already exists for {app['match_process'] or app['match_title']}",
+            })
+            continue
+
+        profile = {
+            "id": uuid.uuid4().hex[:8],
+            "name": f"{template['name']} \u2014 {app['name']}",
+            "match_process": app["match_process"],
+            "match_title": app["match_title"],
+            "system_prompt": template["system_prompt"],
+            "snippets": copy.deepcopy(template["snippets"]),
+            "custom_vocabulary": copy.deepcopy(template["custom_vocabulary"]),
+            "temperature": template["temperature"],
+            "template_id": template["id"],
+            "template_snapshot": {
+                "system_prompt": template["system_prompt"],
+                "snippets": copy.deepcopy(template["snippets"]),
+                "custom_vocabulary": copy.deepcopy(template["custom_vocabulary"]),
+                "temperature": template["temperature"],
+            },
+        }
+        created.append(profile)
+        existing_keys.add((mp, mt))
+
+    return {"created": created, "skipped": skipped}

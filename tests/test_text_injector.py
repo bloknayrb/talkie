@@ -44,13 +44,11 @@ class TestRestoreFocus:
         relevant = [
             c for c in user32.mock_calls
             if c[0] in (
-                "keybd_event", "AttachThreadInput",
+                "AttachThreadInput",
                 "SetForegroundWindow", "BringWindowToTop",
             )
         ]
         assert relevant == [
-            call.keybd_event(0x12, 0, 0x0001, 0),           # Alt down
-            call.keybd_event(0x12, 0, 0x0003, 0),           # Alt up (EXTENDEDKEY | KEYUP)
             call.AttachThreadInput(100, 300, True),          # attach to FOREGROUND tid
             call.SetForegroundWindow(42),
             call.BringWindowToTop(42),

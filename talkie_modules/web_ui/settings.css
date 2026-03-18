@@ -575,3 +575,132 @@ input[type="range"] {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--text-muted);
 }
+
+/* Empty State */
+
+.empty-state {
+    text-align: center;
+    padding: 48px 24px;
+}
+
+.empty-state-text {
+    color: var(--text-secondary);
+    font-size: 15px;
+    margin-bottom: 20px;
+}
+
+.empty-state-secondary {
+    margin-top: 12px;
+    font-size: 13px;
+}
+
+.empty-state-secondary a {
+    color: var(--text-muted);
+    text-decoration: underline;
+}
+
+.empty-state-secondary a:hover {
+    color: var(--text-secondary);
+}
+
+.btn-lg {
+    padding: 12px 24px;
+    font-size: 15px;
+}
+
+/* Profile Actions Row */
+
+.profile-actions-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+/* Template Cards */
+
+.template-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.template-card:hover {
+    border-color: var(--accent);
+    background: var(--bg-hover);
+}
+
+.template-card-icon {
+    font-size: 20px;
+    width: 32px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.template-card-info {
+    flex: 1;
+}
+
+.template-card-name {
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.template-card-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.template-card-count {
+    font-size: 12px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+/* Template App Picker */
+
+.template-app-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.template-app-item:last-child {
+    border-bottom: none;
+}
+
+.template-app-item label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: 13px;
+    flex: 1;
+}
+
+.template-app-item input[type="checkbox"] {
+    accent-color: var(--accent);
+}
+
+.template-app-item .configured {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-style: italic;
+}
+
+.template-app-match {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-family: 'Consolas', monospace;
+    margin-left: auto;
+}

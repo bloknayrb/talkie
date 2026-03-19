@@ -152,6 +152,8 @@ if %ERRORLEVEL% NEQ 0 (
 )
 :: Clean up backup
 del /F "{old_backup}"
+:: Brief pause to let Windows fully release file locks before relaunch
+ping -n 3 127.0.0.1 >NUL
 :: Relaunch
 start "" "{current_exe}"
 :: Self-delete

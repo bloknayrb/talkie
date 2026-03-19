@@ -326,6 +326,25 @@
                     <p><a href="https://github.com/bloknayrb/talkie" target="_blank">GitHub Repository</a></p>
                     <button class="btn btn-sm" id="open-log">Open Log File</button>
                 </div>
+
+                <div class="form-group" id="update-section" style="margin-top: 20px;">
+                    <h3>Updates</h3>
+                    <button class="btn btn-primary" id="check-update-btn">Check for Updates</button>
+                    <div id="update-status" style="display:none; margin-top: 12px;">
+                        <p id="update-message"></p>
+                        <div id="update-notes" style="display:none; margin-top: 8px;"></div>
+                        <div id="update-progress" style="display:none; margin-top: 12px;">
+                            <div class="progress-track">
+                                <div class="progress-fill" id="update-progress-fill"></div>
+                            </div>
+                            <span id="update-progress-text" class="progress-text">0%</span>
+                        </div>
+                        <button class="btn btn-primary" id="download-update-btn" style="display:none; margin-top: 12px;">
+                            Download Update
+                        </button>
+                    </div>
+                    <span class="save-status" id="update-status-msg"></span>
+                </div>
             </section>
         </main>
     </div>

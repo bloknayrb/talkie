@@ -6,6 +6,7 @@ Binds to 127.0.0.1:0 (OS-assigned port) to avoid conflicts.
 
 import copy
 import os
+import sys
 import threading
 import uuid
 from typing import Any, Optional
@@ -89,6 +90,7 @@ def _mask_key(key_name: str, value: str) -> str:
 def create_app(
     on_config_saved: Optional[callable] = None,
     get_version: Optional[callable] = None,
+    quit_app: Optional[callable] = None,
 ) -> bottle.Bottle:
     """
     Create the Bottle WSGI app with all routes.
@@ -96,6 +98,7 @@ def create_app(
     Args:
         on_config_saved: Callback when config is saved (e.g., to refresh hotkey)
         get_version: Callable returning version string
+        quit_app: Callback to shut down the app (for update-and-restart)
     """
     app = bottle.Bottle()
 
@@ -441,6 +444,104 @@ def create_app(
         version = get_version() if get_version else "unknown"
         return {"version": version}
 
+    # ---- Updates ----
+
+    _update_state = {"downloading": False, "progress": 0, "error": None, "ready": False}
+    _update_lock = threading.Lock()
+
+    @app.route("/api/update/check", method="GET")
+    def check_update():
+        if not getattr(sys, "frozen", False):
+            version = get_version() if get_version else "unknown"
+            return {"available": False, "current_version": version,
+                    "error": "Updates only work in the packaged exe."}
+        from talkie_modules.updater import check_for_update
+        version = get_version() if get_version else "0.0.0"
+        result = check_for_update(version)
+        result["current_version"] = version
+        return result
+
+    @app.route("/api/update/download", method="POST")
+    def start_download():
+        if not getattr(sys, "frozen", False):
+            return {"status": "error", "error": "Updates only work in the packaged exe."}
+
+        with _update_lock:
+            if _update_state["downloading"]:
+                return {"status": "already_downloading"}
+            _update_state["downloading"] = True
+            _update_state["progress"] = 0
+            _update_state["error"] = None
+            _update_state["ready"] = False
+
+        data = bottle.request.json or {}
+        url = data.get("url", "")
+        expected_size = data.get("expected_size", 0)
+
+        # Validate URL is from the expected GitHub repo
+        _ALLOWED_PREFIX = "https://github.com/bloknayrb/talkie/releases/"
+        if not url or not url.startswith(_ALLOWED_PREFIX):
+            with _update_lock:
+                _update_state["downloading"] = False
+                _update_state["error"] = "Invalid download URL"
+            return {"status": "error", "error": "Invalid download URL"}
+
+        from talkie_modules.paths import BASE_DIR
+        dest = os.path.join(BASE_DIR, "Talkie_update.exe")
+
+        def _download():
+            from talkie_modules.updater import download_update
+            def _progress(downloaded, total):
+                with _update_lock:
+                    _update_state["progress"] = round(
+                        (downloaded / total * 100) if total else 0, 1
+                    )
+
+            try:
+                download_update(url, dest, expected_size, _progress)
+                with _update_lock:
+                    _update_state["downloading"] = False
+                    _update_state["ready"] = True
+            except PermissionError:
+                with _update_lock:
+                    _update_state["downloading"] = False
+                    _update_state["error"] = "Permission denied — can't write to the app directory."
+            except Exception as exc:
+                logger.error("Update download failed: %s", exc)
+                with _update_lock:
+                    _update_state["downloading"] = False
+                    _update_state["error"] = str(exc)
+
+        threading.Thread(target=_download, daemon=True).start()
+        return {"status": "downloading"}
+
+    @app.route("/api/update/download", method="GET")
+    def poll_download():
+        with _update_lock:
+            return dict(_update_state)
+
+    @app.route("/api/update/apply", method="POST")
+    def apply_update_route():
+        if not getattr(sys, "frozen", False):
+            return {"status": "error", "error": "Updates only work in the packaged exe."}
+
+        with _update_lock:
+            if not _update_state["ready"]:
+                return {"status": "error", "error": "No completed download to apply."}
+
+        from talkie_modules.paths import BASE_DIR
+        from talkie_modules.updater import apply_update
+        update_path = os.path.join(BASE_DIR, "Talkie_update.exe")
+        if not os.path.exists(update_path):
+            return {"status": "error", "error": "No update file found."}
+
+        apply_update(sys.executable, update_path)
+
+        if quit_app:
+            quit_app()
+
+        return {"status": "ok"}
+
     # ---- Profile Templates ----
 
     @app.route("/api/profile-templates", method="GET")
@@ -534,8 +635,9 @@ class SettingsServer:
         self,
         on_config_saved: Optional[callable] = None,
         get_version: Optional[callable] = None,
+        quit_app: Optional[callable] = None,
     ) -> None:
-        self._app = create_app(on_config_saved, get_version)
+        self._app = create_app(on_config_saved, get_version, quit_app)
         self._server: Optional[Any] = None
         self._thread: Optional[threading.Thread] = None
         self.port: int = 0

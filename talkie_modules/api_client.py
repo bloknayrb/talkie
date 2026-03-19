@@ -16,6 +16,9 @@ logger = get_logger("api")
 
 _TIMEOUT = 30  # seconds
 
+# Cache SDK clients by (provider, api_key) to avoid recreating connection pools
+_client_cache: dict[tuple[str, str], object] = {}
+
 
 def _resolve_key(config: dict[str, Any], config_key: str, env_var: str) -> str:
     """Get API key from config, falling back to env var."""
@@ -45,14 +48,23 @@ def _get_anthropic_client(api_key: str) -> "anthropic.Anthropic":
 
 
 def _get_client(provider: str, api_key: str):
-    """Get the appropriate SDK client for a provider."""
+    """Get or create the appropriate SDK client for a provider."""
+    cache_key = (provider, api_key)
+    cached = _client_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     if provider == "openai":
-        return _get_openai_client(api_key)
+        client = _get_openai_client(api_key)
     elif provider == "groq":
-        return _get_groq_client(api_key)
+        client = _get_groq_client(api_key)
     elif provider == "anthropic":
-        return _get_anthropic_client(api_key)
-    raise TalkieConfigError(f"No client factory for provider: {provider}")
+        client = _get_anthropic_client(api_key)
+    else:
+        raise TalkieConfigError(f"No client factory for provider: {provider}")
+
+    _client_cache[cache_key] = client
+    return client
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +111,13 @@ def transcribe_audio(audio_data: npt.NDArray, config: dict[str, Any]) -> str:
 # LLM
 # ---------------------------------------------------------------------------
 
-def process_text_llm(transcription: str, context: str, config: dict[str, Any]) -> str:
+def process_text_llm(
+    transcription: str,
+    context: str,
+    config: dict[str, Any],
+    process_name: str = "",
+    window_title: str = "",
+) -> str:
     """Process transcription through an LLM for formatting and context awareness."""
     provider: str = config.get("api_provider", "openai")
     provider_info = PROVIDERS.get(provider)
@@ -121,10 +139,12 @@ def process_text_llm(transcription: str, context: str, config: dict[str, Any]) -
     system_prompt = system_prompt.replace("{snippets}", snippets_str)
     temperature = config.get("temperature", 0)
 
-    user_prompt = (
-        f"<previous_context>{context}</previous_context>\n\n"
-        f"<transcription>{transcription}</transcription>"
-    )
+    parts = []
+    if process_name or window_title:
+        parts.append(f'<app_context>process="{process_name}" title="{window_title}"</app_context>')
+    parts.append(f"<previous_context>{context}</previous_context>")
+    parts.append(f"<transcription>{transcription}</transcription>")
+    user_prompt = "\n\n".join(parts)
 
     # Resolve key, client, and model from registry
     api_key = _resolve_key(config, provider_info["key_name"], provider_info["key_env"])

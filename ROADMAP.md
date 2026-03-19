@@ -1,5 +1,11 @@
 # Talkie Roadmap
 
+## Recently Shipped
+
+- **v1.1 — Per-app profiles**: Different system prompts, snippets, vocabulary, and temperature per application, auto-matched by process name or window title.
+- **v1.2 — Built-in profile templates**: 6 ready-made templates (Email, Chat, Code/Terminal, Documents, Notes, Browser) with tailored prompts, snippets, and vocabulary. One-click add from Settings, with reset-to-defaults support.
+- **v1.3 — Context improvements & performance**: App-context awareness (process name + window title sent to the LLM for disambiguation), improved text context capture with clipboard fallback on key release, SDK client caching, vectorized indicator rendering, and chime audio caching.
+
 ## Next Up
 
 - **Dictation history** — scrollable log of recent transcriptions with copy/re-inject
@@ -15,5 +21,4 @@
 - **Multi-language support** — language selector for non-English dictation
 - **Tray menu quick-toggle** — switch providers/models from the right-click menu without opening Settings
 - **macOS / Linux port** — replace Win32-specific code (UI Automation, layered windows, credential manager) with cross-platform alternatives
-- ~~**Custom LLM system prompts**~~ — ✅ Done (v1.1 per-app profiles + v1.2 built-in templates)
 - **Plugin system** — hooks for custom post-processing (auto-translate, summarize, format as markdown)

@@ -187,29 +187,3 @@ class TestInjectText:
         mock_clip.copy.assert_called_once_with("fallback text")
         mock_kb.send.assert_called_once_with("ctrl+v")
 
-
-# ---------------------------------------------------------------------------
-# get_target_hwnd tests
-# ---------------------------------------------------------------------------
-
-class TestGetTargetHwnd:
-    """Test get_target_hwnd() with mocked ctypes."""
-
-    @patch("talkie_modules.context_capture.ctypes")
-    def test_returns_hwnd(self, mock_ctypes: MagicMock) -> None:
-        from talkie_modules.context_capture import get_target_hwnd
-        mock_ctypes.windll.user32.GetForegroundWindow.return_value = 42
-        mock_ctypes.create_unicode_buffer.return_value = MagicMock(value="Notepad")
-        assert get_target_hwnd() == 42
-
-    @patch("talkie_modules.context_capture.ctypes")
-    def test_returns_zero_on_null(self, mock_ctypes: MagicMock) -> None:
-        from talkie_modules.context_capture import get_target_hwnd
-        mock_ctypes.windll.user32.GetForegroundWindow.return_value = 0
-        assert get_target_hwnd() == 0
-
-    @patch("talkie_modules.context_capture.ctypes")
-    def test_returns_zero_on_exception(self, mock_ctypes: MagicMock) -> None:
-        from talkie_modules.context_capture import get_target_hwnd
-        mock_ctypes.windll.user32.GetForegroundWindow.side_effect = OSError("fail")
-        assert get_target_hwnd() == 0

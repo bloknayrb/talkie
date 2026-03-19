@@ -12,11 +12,17 @@ Talkie is a local, Windows-based dictation utility designed to be a lightweight 
 
 - **Hold-to-Talk Interaction**: Global hotkey (default: `ctrl+win`) allows for instant dictation.
 - **Near-Cursor Visual Feedback**: Anti-aliased floating indicator near your cursor shows recording (red with glow), processing (pulsing blue), and success (fading green checkmark) — rendered via Win32 layered window.
-- **Context Awareness**: Automatically captures surrounding text to ensure perfect capitalization and spacing.
+- **Context Awareness**: Captures surrounding text and the target application's name and window title, giving the LLM the context it needs for accurate capitalization, spacing, and disambiguation of technical terms.
 - **Multi-Provider Support**: Supports OpenAI (Whisper), Groq (Whisper-v3), and Anthropic (Claude) for STT and LLM processing.
 - **Model Selection**: Choose STT and LLM models directly from Settings — no config file editing needed.
 - **Per-App Profiles**: Configure different system prompts, snippets, vocabulary, and temperature per application — Talkie automatically applies the matching profile based on the focused window.
-- **Built-in Profile Templates**: 6 ready-made templates for Email, Chat, Code/Terminal, Documents, Notes, and Browser — each with a tailored system prompt, default snippets, vocabulary, and pre-filled process names. Add templates from Settings with one click, then customize as needed.
+- **Built-in Profile Templates**: 6 ready-made templates — each with a tailored system prompt, default snippets, vocabulary, and pre-filled process names. Add from Settings with one click, then customize as needed:
+  - **Email** — auto-formats greetings and closings on separate lines
+  - **Chat** — preserves informal tone; say "at-mention" or "at sign" before a name to insert `@name`
+  - **Code / Terminal** — deterministic output (temperature 0), preserves technical terms verbatim
+  - **Documents** — formal prose; say "new paragraph" for explicit paragraph breaks, or "bullet point" / "numbered" / "list item" to start a list
+  - **Notes** — spoken markdown commands: "heading", "subheading", "bullet", "checkbox", "numbered" at the start of an utterance insert the corresponding prefix
+  - **Browser** — say "hashtag" before a word to insert `#word`; optimized for search and URL fields
 - **Custom Snippets**: Define short abbreviations that expand into full text via a structured editor (e.g., `br` -> `Best regards`).
 - **Custom Vocabulary**: Ensure specific names, brands, or technical terms are always spelled correctly.
 - **Audio Feedback**: Soft pop sounds for recording start/stop — quick 30ms taps instead of harsh beeps.
@@ -48,18 +54,15 @@ You can also right-click the tray icon and select **Settings** at any time, or s
 
 ## Build from Source
 
-### Quick (uses your existing Python)
+### Quick (uv — recommended)
 
 ```bash
 git clone https://github.com/bloknayrb/talkie.git
 cd talkie
-pip install -r requirements.txt
-python build.py
+uv run --with-requirements requirements.txt python build.py
 ```
 
-The executable will be in `dist/Talkie.exe`.
-
-### Recommended (clean venv — smallest exe)
+### Alternative (pip + venv)
 
 Using a virtual environment ensures only Talkie's dependencies are bundled, producing a much smaller executable (~40MB vs 200MB+).
 
@@ -75,15 +78,13 @@ python build.py
 ### Run from source (no build)
 
 ```bash
-pip install -r requirements.txt
-python main.py
+uv run --with-requirements requirements.txt python main.py
 ```
 
 ## Running Tests
 
 ```bash
-pip install pytest
-python -m pytest tests/ -v
+uv run --with-requirements requirements.txt --with pytest python -m pytest tests/ -v
 ```
 
 ## Project Structure
@@ -97,15 +98,15 @@ talkie_modules/
     config_manager.py            # Config loading/saving with keyring integration
     state.py                     # Thread-safe state machine (IDLE/RECORDING/PROCESSING/ERROR)
     exceptions.py                # Custom exception hierarchy
-    api_client.py                # STT and LLM API calls via official SDKs
-    audio_io.py                  # Mic recording and soft pop/tap generation
-    context_capture.py           # Captures surrounding text via Windows UI Automation
+    api_client.py                # STT and LLM API calls with cached SDK clients
+    audio_io.py                  # Mic recording, chime caching, and pop/tap generation
+    context_capture.py           # Captures surrounding text via UI Automation with clipboard fallback
     profile_matcher.py           # Resolves and applies per-app profiles at dictation time
     profile_templates.py         # Built-in profile templates (Email, Chat, Code, etc.)
     hotkey_manager.py            # Global key hold/release listener
     text_injector.py             # Pastes processed text via clipboard
     settings_server.py           # Bottle REST API for settings web UI
-    status_indicator_native.py   # Win32 native layered window indicator
+    status_indicator_native.py   # Win32 native layered window indicator with vectorized rendering
     icon_generator.py            # PIL-generated walkie-talkie icon
     notifications.py             # Windows toast notifications and error chimes
     web_ui/
@@ -119,7 +120,7 @@ assets/
 tests/
     test_state.py                # State machine transitions and thread safety
     test_config_manager.py       # Config merging and API key validation
-    test_api_client.py           # Mocked STT/LLM API calls
+    test_api_client.py           # Mocked STT/LLM API calls and app context
     test_audio_io.py             # Pop/tap generation and asset versioning
     test_text_injector.py        # Focus restoration and text injection
     test_context_stripping.py    # Prior-injection removal from context

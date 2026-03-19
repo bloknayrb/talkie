@@ -93,7 +93,8 @@ function populateUI() {
     document.getElementById('silence-value').textContent = silence.toFixed(3);
 
     // Build dynamic key groups from bundled provider data, then apply cached statuses
-    buildKeyGroups().then(() => applyKeyStatuses());
+    buildKeyGroups();
+    applyKeyStatuses();
 
     // Snippets
     populateSnippets();

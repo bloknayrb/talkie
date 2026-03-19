@@ -104,16 +104,17 @@ def download_update(url: str, dest_path: str, expected_size: int,
             )
 
         # Atomic-ish rename: remove dest if it exists, then rename tmp
-        if os.path.exists(dest_path):
+        try:
             os.remove(dest_path)
+        except FileNotFoundError:
+            pass
         os.rename(tmp_path, dest_path)
 
     except Exception:
         # Clean up partial download
         for path in (tmp_path, dest_path):
             try:
-                if os.path.exists(path):
-                    os.remove(path)
+                os.remove(path)
             except OSError:
                 pass
         raise
@@ -181,8 +182,9 @@ def cleanup_update_files(base_dir: str) -> None:
     ]
     for path in stale:
         try:
-            if os.path.exists(path):
-                os.remove(path)
-                logger.debug("Cleaned up stale update file: %s", path)
+            os.remove(path)
+            logger.debug("Cleaned up stale update file: %s", path)
+        except FileNotFoundError:
+            pass  # already gone — expected on clean starts
         except OSError as exc:
             logger.debug("Could not clean up %s: %s", path, exc)

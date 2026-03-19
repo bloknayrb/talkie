@@ -5,19 +5,18 @@ let models = { stt: {}, llm: {} };
 let defaultSystemPrompt = '';  // Fetched from backend during loadConfig()
 let hotkeyPollTimer = null;
 
+// ---- Poll Timer Management ----
+
+function clearAllPollTimers() {
+    if (hotkeyPollTimer) { clearInterval(hotkeyPollTimer); hotkeyPollTimer = null; }
+    if (updatePollTimer) { clearInterval(updatePollTimer); updatePollTimer = null; }
+}
+
 // ---- Navigation ----
 
 document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', () => {
-        // Clear poll timers when navigating away
-        if (hotkeyPollTimer) {
-            clearInterval(hotkeyPollTimer);
-            hotkeyPollTimer = null;
-        }
-        if (updatePollTimer) {
-            clearInterval(updatePollTimer);
-            updatePollTimer = null;
-        }
+        clearAllPollTimers();
         document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
         document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
         item.classList.add('active');
@@ -1118,16 +1117,7 @@ document.getElementById('download-update-btn').addEventListener('click', async (
 
 // ---- Cleanup ----
 
-window.addEventListener('beforeunload', () => {
-    if (hotkeyPollTimer) {
-        clearInterval(hotkeyPollTimer);
-        hotkeyPollTimer = null;
-    }
-    if (updatePollTimer) {
-        clearInterval(updatePollTimer);
-        updatePollTimer = null;
-    }
-});
+window.addEventListener('beforeunload', clearAllPollTimers);
 
 // ---- Init ----
 

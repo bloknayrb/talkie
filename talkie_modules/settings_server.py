@@ -42,6 +42,8 @@ _VALID_PROVIDERS = frozenset(STT_MODELS) | frozenset(LLM_MODELS)
 _VALID_STT_PROVIDERS = frozenset(STT_MODELS)
 _VALID_LLM_PROVIDERS = frozenset(LLM_MODELS)
 
+_ALLOWED_UPDATE_PREFIX = "https://github.com/bloknayrb/talkie/releases/"
+
 _NUMERIC_VALIDATORS = {
     "temperature": (float, 0.0, 2.0),
     "min_hold_seconds": (float, 0.2, 3.0),
@@ -448,13 +450,17 @@ def create_app(
 
     _update_state = {"downloading": False, "progress": 0, "error": None, "ready": False}
     _update_lock = threading.Lock()
+    _DEV_MODE_MSG = "Updates only work in the packaged exe."
+
+    def _is_dev_mode():
+        return not getattr(sys, "frozen", False)
 
     @app.route("/api/update/check", method="GET")
     def check_update():
-        if not getattr(sys, "frozen", False):
+        if _is_dev_mode():
             version = get_version() if get_version else "unknown"
             return {"available": False, "current_version": version,
-                    "error": "Updates only work in the packaged exe."}
+                    "error": _DEV_MODE_MSG}
         from talkie_modules.updater import check_for_update
         version = get_version() if get_version else "0.0.0"
         result = check_for_update(version)
@@ -463,8 +469,8 @@ def create_app(
 
     @app.route("/api/update/download", method="POST")
     def start_download():
-        if not getattr(sys, "frozen", False):
-            return {"status": "error", "error": "Updates only work in the packaged exe."}
+        if _is_dev_mode():
+            return {"status": "error", "error": _DEV_MODE_MSG}
 
         with _update_lock:
             if _update_state["downloading"]:
@@ -479,8 +485,7 @@ def create_app(
         expected_size = data.get("expected_size", 0)
 
         # Validate URL is from the expected GitHub repo
-        _ALLOWED_PREFIX = "https://github.com/bloknayrb/talkie/releases/"
-        if not url or not url.startswith(_ALLOWED_PREFIX):
+        if not url or not url.startswith(_ALLOWED_UPDATE_PREFIX):
             with _update_lock:
                 _update_state["downloading"] = False
                 _update_state["error"] = "Invalid download URL"
@@ -491,11 +496,15 @@ def create_app(
 
         def _download():
             from talkie_modules.updater import download_update
+            _last_pct = [-1]  # mutable container for closure
+
             def _progress(downloaded, total):
+                pct = round((downloaded / total * 100) if total else 0, 1)
+                if pct == _last_pct[0]:
+                    return  # skip redundant lock acquisition
+                _last_pct[0] = pct
                 with _update_lock:
-                    _update_state["progress"] = round(
-                        (downloaded / total * 100) if total else 0, 1
-                    )
+                    _update_state["progress"] = pct
 
             try:
                 download_update(url, dest, expected_size, _progress)
@@ -522,8 +531,8 @@ def create_app(
 
     @app.route("/api/update/apply", method="POST")
     def apply_update_route():
-        if not getattr(sys, "frozen", False):
-            return {"status": "error", "error": "Updates only work in the packaged exe."}
+        if _is_dev_mode():
+            return {"status": "error", "error": _DEV_MODE_MSG}
 
         with _update_lock:
             if not _update_state["ready"]:

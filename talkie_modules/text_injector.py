@@ -43,10 +43,16 @@ def _restore_focus(hwnd: int) -> bool:
         user32.ShowWindow(hwnd, _SW_RESTORE)
         time.sleep(0.015)  # Let restore animation settle
 
-    current_tid = kernel32.GetCurrentThreadId()
-
-    # Get the FOREGROUND window's thread (the one holding the lock) — NOT the target's
+    # If the target already has focus, skip refocus entirely — calling
+    # SetForegroundWindow on an already-focused window can cause some apps
+    # (browsers, Electron, WinUI) to auto-select all text in the active field,
+    # which would make the subsequent Ctrl+V replace everything.
     fg_hwnd = user32.GetForegroundWindow()
+    if fg_hwnd == hwnd:
+        logger.debug("Target HWND=%d already has focus, skipping refocus", hwnd)
+        return True
+
+    current_tid = kernel32.GetCurrentThreadId()
     fg_tid = user32.GetWindowThreadProcessId(fg_hwnd, None) if fg_hwnd else 0
 
     # Attach to the foreground thread to borrow its input queue, which allows

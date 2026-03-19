@@ -22,7 +22,7 @@ from talkie_modules.status_indicator_native import NativeStatusIndicator
 from talkie_modules.state import StateMachine, AppState
 from talkie_modules.notifications import notify_error, notify_discard
 from talkie_modules.exceptions import TalkieError
-from talkie_modules.paths import LOG_FILE
+from talkie_modules.paths import LOG_FILE, BASE_DIR
 
 logger = get_logger("app")
 
@@ -236,6 +236,10 @@ class TalkieApp:
         threading.Timer(1.0, lambda: os._exit(0)).start()
 
     def run(self) -> None:
+        # 0. Clean up stale update files from a previous update
+        from talkie_modules.updater import cleanup_update_files
+        cleanup_update_files(BASE_DIR)
+
         # 1. Start hotkey listener
         self.hotkey_manager = HotkeyManager(
             self.config.get("hotkey", "ctrl+win"), self.on_press, self.on_release
@@ -250,6 +254,7 @@ class TalkieApp:
         self._settings_server = SettingsServer(
             on_config_saved=self._on_config_saved,
             get_version=lambda: __version__,
+            quit_app=self.quit_app,
         )
         self._settings_server.start()
 

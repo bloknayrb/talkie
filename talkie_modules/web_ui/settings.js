@@ -5,15 +5,18 @@ let models = { stt: {}, llm: {} };
 let defaultSystemPrompt = '';  // Fetched from backend during loadConfig()
 let hotkeyPollTimer = null;
 
+// ---- Poll Timer Management ----
+
+function clearAllPollTimers() {
+    if (hotkeyPollTimer) { clearInterval(hotkeyPollTimer); hotkeyPollTimer = null; }
+    if (updatePollTimer) { clearInterval(updatePollTimer); updatePollTimer = null; }
+}
+
 // ---- Navigation ----
 
 document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', () => {
-        // Clear hotkey poll timer when navigating away
-        if (hotkeyPollTimer) {
-            clearInterval(hotkeyPollTimer);
-            hotkeyPollTimer = null;
-        }
+        clearAllPollTimers();
         document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
         document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
         item.classList.add('active');
@@ -1003,14 +1006,118 @@ document.getElementById('empty-state-manual').addEventListener('click', (e) => {
 });
 document.getElementById('add-from-template').addEventListener('click', () => showTemplateView());
 
+// ---- Updates ----
+
+let _updateInfo = null;  // Cached check result
+let updatePollTimer = null;
+
+document.getElementById('check-update-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('check-update-btn');
+    const statusDiv = document.getElementById('update-status');
+    const msgEl = document.getElementById('update-message');
+    const notesEl = document.getElementById('update-notes');
+    const downloadBtn = document.getElementById('download-update-btn');
+    const progressDiv = document.getElementById('update-progress');
+
+    btn.disabled = true;
+    btn.textContent = 'Checking...';
+    statusDiv.style.display = 'block';
+    msgEl.textContent = '';
+    notesEl.style.display = 'none';
+    downloadBtn.style.display = 'none';
+    progressDiv.style.display = 'none';
+
+    const result = await api('GET', '/api/update/check');
+
+    btn.disabled = false;
+    btn.textContent = 'Check for Updates';
+
+    if (result.error) {
+        msgEl.textContent = result.error;
+        msgEl.style.color = 'var(--error)';
+        return;
+    }
+
+    if (!result.available) {
+        msgEl.textContent = `You're on the latest version (v${result.current_version || result.latest_version || ''}).`;
+        msgEl.style.color = 'var(--success)';
+        return;
+    }
+
+    _updateInfo = result;
+    msgEl.textContent = `Update available: v${result.latest_version}`;
+    msgEl.style.color = 'var(--accent)';
+
+    if (result.release_notes) {
+        notesEl.textContent = result.release_notes;
+        notesEl.style.display = 'block';
+    }
+
+    downloadBtn.textContent = `Download v${result.latest_version}`;
+    downloadBtn.style.display = 'inline-block';
+});
+
+document.getElementById('download-update-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('download-update-btn');
+    const progressDiv = document.getElementById('update-progress');
+    const fillEl = document.getElementById('update-progress-fill');
+    const textEl = document.getElementById('update-progress-text');
+
+    if (btn.dataset.action === 'apply') {
+        btn.disabled = true;
+        btn.textContent = 'Restarting...';
+        await api('POST', '/api/update/apply');
+        return;
+    }
+
+    if (!_updateInfo) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Downloading...';
+    progressDiv.style.display = 'block';
+    fillEl.style.width = '0%';
+    textEl.textContent = '0%';
+
+    await api('POST', '/api/update/download', {
+        url: _updateInfo.download_url,
+        expected_size: _updateInfo.download_size || 0,
+    });
+
+    // Poll for progress
+    updatePollTimer = setInterval(async () => {
+        const state = await api('GET', '/api/update/download');
+
+        if (state.error) {
+            clearInterval(updatePollTimer);
+            updatePollTimer = null;
+            btn.disabled = false;
+            btn.textContent = `Download v${_updateInfo.latest_version}`;
+            fillEl.style.width = '0%';
+            textEl.textContent = state.error;
+            textEl.style.color = 'var(--error)';
+            return;
+        }
+
+        const pct = Math.round(state.progress || 0);
+        fillEl.style.width = pct + '%';
+        textEl.textContent = pct + '%';
+        textEl.style.color = '';
+
+        if (state.ready) {
+            clearInterval(updatePollTimer);
+            updatePollTimer = null;
+            fillEl.style.width = '100%';
+            textEl.textContent = '100%';
+            btn.disabled = false;
+            btn.textContent = 'Install & Restart';
+            btn.dataset.action = 'apply';
+        }
+    }, 500);
+});
+
 // ---- Cleanup ----
 
-window.addEventListener('beforeunload', () => {
-    if (hotkeyPollTimer) {
-        clearInterval(hotkeyPollTimer);
-        hotkeyPollTimer = null;
-    }
-});
+window.addEventListener('beforeunload', clearAllPollTimers);
 
 // ---- Init ----
 

@@ -60,10 +60,10 @@ async function loadConfig() {
         content.replaceChildren(section);
         return;
     }
-    models = await api('GET', '/api/models');
-    if (models.status === 'error') {
-        models = { stt: {}, llm: {} };
-    }
+    // Config response bundles models, providers, key statuses, and version
+    // to avoid multiple sequential round trips on the single-threaded server.
+    models = config._models || { stt: {}, llm: {} };
+    _keyStatusCache = config._key_statuses || {};
     populateUI();
 }
 
@@ -92,8 +92,8 @@ function populateUI() {
     document.getElementById('silence-threshold').value = silence;
     document.getElementById('silence-value').textContent = silence.toFixed(3);
 
-    // Build dynamic key groups, then load statuses
-    buildKeyGroups().then(() => loadKeyStatuses());
+    // Build dynamic key groups from bundled provider data, then apply cached statuses
+    buildKeyGroups().then(() => applyKeyStatuses());
 
     // Snippets
     populateSnippets();
@@ -114,10 +114,8 @@ function populateUI() {
     // Quick Start badges
     updateQuickStartBadges();
 
-    // About
-    api('GET', '/api/about').then(data => {
-        document.getElementById('about-version').textContent = data.version;
-    });
+    // About (version bundled in config response)
+    document.getElementById('about-version').textContent = config._version || '-';
 
     // If missing keys, show Quick Start
     if (config._missing_keys && config._missing_keys.length > 0) {
@@ -196,17 +194,11 @@ document.getElementById('save-providers').addEventListener('click', async () => 
 // Cache key status data to avoid double-fetching (loadKeyStatuses + updateQuickStartBadges)
 let _keyStatusCache = {};
 
-async function loadKeyStatuses() {
-    _keyStatusCache = {};
-    for (const provider of ['openai', 'groq', 'anthropic']) {
-        const data = await api('GET', `/api/keys/${provider}`);
-        _keyStatusCache[provider] = data;
+function applyKeyStatuses() {
+    for (const [provider, data] of Object.entries(_keyStatusCache)) {
         const statusEl = document.getElementById(`${provider}-key-status`);
         if (!statusEl) continue;
-        if (data.status === 'error') {
-            statusEl.textContent = 'error';
-            statusEl.className = 'key-status error';
-        } else if (data.exists) {
+        if (data.exists) {
             statusEl.textContent = data.masked;
             statusEl.className = 'key-status ok';
         } else {
@@ -256,14 +248,14 @@ async function testKey(provider) {
 
 // ---- Dynamic Key Groups ----
 
-async function buildKeyGroups() {
+function buildKeyGroups() {
     const container = document.getElementById('key-groups');
     if (!container) return;
 
-    const data = await api('GET', '/api/providers');
-    if (data.status === 'error' || !data.providers) return;
+    const providers = config._providers || [];
+    if (!providers.length) return;
 
-    for (const prov of data.providers) {
+    for (const prov of providers) {
         const group = document.createElement('div');
         group.className = 'key-group';
         group.id = `key-${prov.id}`;

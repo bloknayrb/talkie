@@ -132,6 +132,31 @@ def create_app(
         # Add missing keys info for first-run detection
         config["_missing_keys"] = get_missing_keys(config)
         config["_default_system_prompt"] = DEFAULT_CONFIG["system_prompt"]
+
+        # Bundle data that the frontend needs at load time to avoid
+        # multiple sequential round trips on a single-threaded server.
+        config["_models"] = {"stt": STT_MODELS, "llm": LLM_MODELS}
+        config["_providers"] = [
+            {
+                "id": pid,
+                "label": pinfo["label"],
+                "placeholder": pinfo["key_prefix"] + "...",
+                "url": pinfo["key_url"],
+                "has_stt": pinfo["stt_models"] is not None,
+                "has_llm": pinfo["llm_models"] is not None,
+            }
+            for pid, pinfo in PROVIDERS.items()
+        ]
+        config["_key_statuses"] = {}
+        for pid in PROVIDERS:
+            key_name = f"{pid}_key"
+            value = get_api_key(key_name)
+            config["_key_statuses"][pid] = {
+                "exists": bool(value),
+                "masked": _mask_key(key_name, value),
+            }
+        config["_version"] = get_version() if get_version else "unknown"
+
         return config
 
     @app.route("/api/config", method="POST")

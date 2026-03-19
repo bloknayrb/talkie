@@ -562,6 +562,7 @@ def create_app(
         with _update_lock:
             if not _update_state["ready"]:
                 return {"status": "error", "error": "No completed download to apply."}
+            _update_state["ready"] = False  # prevent double-apply
 
         from talkie_modules.paths import BASE_DIR
         from talkie_modules.updater import apply_update

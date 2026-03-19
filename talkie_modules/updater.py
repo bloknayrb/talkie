@@ -164,12 +164,9 @@ exit /b 1
         f.write(script)
 
     # Launch hidden and detached so it survives our exit
-    CREATE_NEW_PROCESS_GROUP = 0x00000200
-    CREATE_NO_WINDOW = 0x08000000
     subprocess.Popen(
         ["cmd.exe", "/c", script_path],
-        creationflags=CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
-        close_fds=True,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

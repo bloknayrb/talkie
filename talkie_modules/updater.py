@@ -132,22 +132,22 @@ def apply_update(current_exe: str, new_exe: str) -> None:
 :: Wait for PID {pid} to exit (up to ~20 seconds)
 set attempts=0
 :wait
-tasklist /FI "PID eq {pid}" 2>NUL | find /I "{pid}" >NUL
+tasklist /FI "PID eq {pid}" /NH /FO CSV 2>NUL | find /I ",{pid}," >NUL
 if %ERRORLEVEL%==0 (
     set /a attempts+=1
     if %attempts% GEQ 20 goto fail
     ping -n 2 127.0.0.1 >NUL
     goto wait
 )
-:: Rename old exe as backup (safe rollback point)
+:: Move old exe to backup (safe rollback point)
 if exist "{old_backup}" del /F "{old_backup}"
-rename "{current_exe}" "{os.path.basename(old_backup)}"
+move /Y "{current_exe}" "{old_backup}"
 if %ERRORLEVEL% NEQ 0 goto fail
 :: Move new exe into place
-rename "{new_exe}" "{os.path.basename(current_exe)}"
+move /Y "{new_exe}" "{current_exe}"
 if %ERRORLEVEL% NEQ 0 (
     :: Rollback: restore old exe
-    rename "{old_backup}" "{os.path.basename(current_exe)}"
+    move /Y "{old_backup}" "{current_exe}"
     goto fail
 )
 :: Clean up backup
@@ -163,13 +163,16 @@ exit /b 1
     with open(script_path, "w") as f:
         f.write(script)
 
-    # Launch detached so it survives our exit
+    # Launch hidden and detached so it survives our exit
     CREATE_NEW_PROCESS_GROUP = 0x00000200
-    DETACHED_PROCESS = 0x00000008
+    CREATE_NO_WINDOW = 0x08000000
     subprocess.Popen(
         ["cmd.exe", "/c", script_path],
-        creationflags=CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS,
+        creationflags=CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
         close_fds=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
 
 

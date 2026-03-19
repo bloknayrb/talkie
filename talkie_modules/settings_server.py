@@ -571,8 +571,12 @@ def create_app(
 
         apply_update(sys.executable, update_path)
 
+        # Schedule shutdown after a short delay so the HTTP response returns.
+        # Failsafe os._exit ensures the process dies even if quit_app blocks
+        # (e.g. tray_icon.stop() hanging).
+        threading.Timer(3.0, lambda: os._exit(0)).start()
         if quit_app:
-            quit_app()
+            threading.Timer(0.5, quit_app).start()
 
         return {"status": "ok"}
 

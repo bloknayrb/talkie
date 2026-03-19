@@ -103,29 +103,37 @@ def ensure_assets() -> None:
         _generate_double_tap(STOP_WAV, freq=600, volume=0.25)
 
 
-def play_start_chime() -> None:
-    """Play the recording-start chime. Failure is non-fatal."""
+_chime_cache: dict[str, tuple[npt.NDArray, int]] = {}
+
+
+def _play_chime(path: str) -> None:
+    """Play a cached chime WAV. Failure is non-fatal."""
     try:
-        data, fs = sf.read(START_WAV)
-        sd.play(data, fs)
+        cached = _chime_cache.get(path)
+        if cached is None:
+            data, fs = sf.read(path)
+            cached = (data, fs)
+            _chime_cache[path] = cached
+        sd.play(cached[0], cached[1])
     except Exception as e:
-        logger.warning("Could not play start chime: %s", e)
+        logger.warning("Could not play chime %s: %s", path, e)
+
+
+def play_start_chime() -> None:
+    """Play the recording-start chime."""
+    _play_chime(START_WAV)
 
 
 def play_stop_chime() -> None:
-    """Play the recording-stop chime. Failure is non-fatal."""
-    try:
-        data, fs = sf.read(STOP_WAV)
-        sd.play(data, fs)
-    except Exception as e:
-        logger.warning("Could not play stop chime: %s", e)
+    """Play the recording-stop chime."""
+    _play_chime(STOP_WAV)
 
 
 def compute_rms(audio: npt.NDArray) -> float:
     """Compute RMS energy of audio data."""
     if len(audio) == 0:
         return 0.0
-    return float(np.sqrt(np.mean(audio.astype(np.float64) ** 2)))
+    return float(np.sqrt(np.mean(np.square(audio, dtype=np.float32))))
 
 
 # ---------------------------------------------------------------------------

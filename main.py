@@ -8,7 +8,6 @@ import time
 from typing import Optional
 
 from dotenv import load_dotenv
-from PIL import Image
 
 from talkie_modules.logger import setup_logging, get_logger
 from talkie_modules.config_manager import load_config, get_missing_keys
@@ -27,7 +26,7 @@ from talkie_modules.paths import LOG_FILE
 
 logger = get_logger("app")
 
-__version__ = "0.6.0"
+__version__ = "1.3.0"
 
 # ---------------------------------------------------------------------------
 # Single-instance guard
@@ -62,7 +61,6 @@ class TalkieApp:
         self.state: StateMachine = StateMachine()
         self._indicator: Optional[NativeStatusIndicator] = None
         self._settings_server: Optional[SettingsServer] = None
-        self._pending_context: str = ""
         self._pending_hwnd: int = 0
         self._pending_process: str = ""
         self._pending_title: str = ""
@@ -142,7 +140,6 @@ class TalkieApp:
         self._press_time = time.time()
         self._pending_hwnd, self._pending_process, self._pending_title = get_target_window()
         start_recording()                           # Chime plays immediately
-        self._pending_context = get_context(use_fallback=False)  # Slow, but recording already active
 
     def on_release(self) -> None:
         if not self.state.transition(AppState.RECORDING, AppState.PROCESSING):
@@ -152,16 +149,17 @@ class TalkieApp:
         logger.info("Released hotkey. Processing...")
         self._show_indicator(AppState.PROCESSING)
 
-        context = self._pending_context
         target_hwnd = self._pending_hwnd
         press_time = self._press_time
         pending_process = self._pending_process
         pending_title = self._pending_title
 
         def run_pipeline() -> None:
+            context = get_context(use_fallback=True)  # Modifiers released; fallback works
             audio_data = stop_recording()
+            clean_context = self._strip_prior_injection(context)
             elapsed = time.time() - press_time
-            config = load_config()
+            config = self.config
             profile = resolve_profile(
                 config.get("profiles", []), pending_process, pending_title
             )
@@ -201,20 +199,19 @@ class TalkieApp:
             try:
                 transcription = transcribe_audio(audio_data, config)
                 logger.info("Transcription: %s", transcription[:100])
-                clean_context = self._strip_prior_injection(context)
-                processed_text = process_text_llm(transcription, clean_context, config)
+                processed_text = process_text_llm(
+                    transcription, clean_context, config,
+                    process_name=pending_process, window_title=pending_title,
+                )
                 inject_text(processed_text, target_hwnd)
                 self._last_injected = processed_text
-            except TalkieError as e:
-                logger.error("Pipeline error: %s", e)
-                notify_error(str(e))
-                self._last_injected = ""
-                self._show_indicator(AppState.ERROR)
-                self.state.force(AppState.IDLE)
-                return
             except Exception as e:
-                logger.error("Unexpected pipeline error: %s", e, exc_info=True)
-                notify_error(f"Unexpected error: {e}")
+                is_expected = isinstance(e, TalkieError)
+                logger.error(
+                    "Pipeline error: %s" if is_expected else "Unexpected pipeline error: %s",
+                    e, exc_info=not is_expected,
+                )
+                notify_error(str(e) if is_expected else f"Unexpected error: {e}")
                 self._last_injected = ""
                 self._show_indicator(AppState.ERROR)
                 self.state.force(AppState.IDLE)

@@ -15,6 +15,7 @@ import threading
 import time
 from typing import Optional
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 from talkie_modules.logger import get_logger
@@ -42,6 +43,22 @@ GWL_EXSTYLE = -20
 user32 = ctypes.windll.user32
 gdi32 = ctypes.windll.gdi32
 kernel32 = ctypes.windll.kernel32
+
+
+class BITMAPINFOHEADER(ctypes.Structure):
+    _fields_ = [
+        ("biSize", ctypes.c_uint32),
+        ("biWidth", ctypes.c_int32),
+        ("biHeight", ctypes.c_int32),
+        ("biPlanes", ctypes.c_uint16),
+        ("biBitCount", ctypes.c_uint16),
+        ("biCompression", ctypes.c_uint32),
+        ("biSizeImage", ctypes.c_uint32),
+        ("biXPelsPerMeter", ctypes.c_int32),
+        ("biYPelsPerMeter", ctypes.c_int32),
+        ("biClrUsed", ctypes.c_uint32),
+        ("biClrImportant", ctypes.c_uint32),
+    ]
 
 # ---------------------------------------------------------------------------
 # Win32 argtypes / restype — required on 64-bit to avoid pointer truncation
@@ -440,27 +457,19 @@ class NativeStatusIndicator:
         if not self._hwnd:
             return
 
-        # Convert RGBA to BGRA for Win32
-        r, g, b, a = img.split()
-        bgra = Image.merge("RGBA", (b, g, r, a))
+        # Convert RGBA to premultiplied BGRA using numpy (vectorized)
+        arr = np.array(img, dtype=np.uint16)  # uint16 avoids overflow during multiply
+        alpha = arr[:, :, 3:4]
+        rgb = arr[:, :, :3]
+        premultiplied_rgb = (rgb * alpha + 127) // 255  # Round-to-nearest premultiply
+        bgra = np.empty((self.SIZE, self.SIZE, 4), dtype=np.uint8)
+        bgra[:, :, 0] = premultiplied_rgb[:, :, 2]  # B
+        bgra[:, :, 1] = premultiplied_rgb[:, :, 1]  # G
+        bgra[:, :, 2] = premultiplied_rgb[:, :, 0]  # R
+        bgra[:, :, 3] = arr[:, :, 3]                 # A
         raw = bgra.tobytes()
 
         # Create DIB section
-        class BITMAPINFOHEADER(ctypes.Structure):
-            _fields_ = [
-                ("biSize", ctypes.c_uint32),
-                ("biWidth", ctypes.c_int32),
-                ("biHeight", ctypes.c_int32),
-                ("biPlanes", ctypes.c_uint16),
-                ("biBitCount", ctypes.c_uint16),
-                ("biCompression", ctypes.c_uint32),
-                ("biSizeImage", ctypes.c_uint32),
-                ("biXPelsPerMeter", ctypes.c_int32),
-                ("biYPelsPerMeter", ctypes.c_int32),
-                ("biClrUsed", ctypes.c_uint32),
-                ("biClrImportant", ctypes.c_uint32),
-            ]
-
         hdc_screen = user32.GetDC(0)
         hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
 
@@ -489,44 +498,29 @@ class NativeStatusIndicator:
 
         old_bmp = gdi32.SelectObject(hdc_mem, hbmp)
 
-        # Copy pixel data — premultiply alpha for UpdateLayeredWindow
-        premultiplied = bytearray(len(raw))
-        for i in range(0, len(raw), 4):
-            alpha_val = raw[i + 3]
-            if alpha_val == 255:
-                premultiplied[i:i + 4] = raw[i:i + 4]
-            elif alpha_val == 0:
-                premultiplied[i:i + 4] = b'\x00\x00\x00\x00'
-            else:
-                factor = alpha_val / 255.0
-                premultiplied[i] = int(raw[i] * factor)
-                premultiplied[i + 1] = int(raw[i + 1] * factor)
-                premultiplied[i + 2] = int(raw[i + 2] * factor)
-                premultiplied[i + 3] = alpha_val
+        try:
+            ctypes.memmove(bits, raw, len(raw))
 
-        ctypes.memmove(bits, bytes(premultiplied), len(premultiplied))
+            # UpdateLayeredWindow
+            pt_src = ctypes.wintypes.POINT(0, 0)
+            pt_dst = ctypes.wintypes.POINT(self._anchor_x, self._anchor_y)
+            sz = ctypes.wintypes.SIZE(self.SIZE, self.SIZE)
 
-        # UpdateLayeredWindow
-        pt_src = ctypes.wintypes.POINT(0, 0)
-        pt_dst = ctypes.wintypes.POINT(self._anchor_x, self._anchor_y)
-        sz = ctypes.wintypes.SIZE(self.SIZE, self.SIZE)
+            blend = BLENDFUNCTION()
+            blend.BlendOp = AC_SRC_OVER
+            blend.BlendFlags = 0
+            blend.SourceConstantAlpha = 255
+            blend.AlphaFormat = AC_SRC_ALPHA
 
-        blend = BLENDFUNCTION()
-        blend.BlendOp = AC_SRC_OVER
-        blend.BlendFlags = 0
-        blend.SourceConstantAlpha = 255
-        blend.AlphaFormat = AC_SRC_ALPHA
-
-        user32.UpdateLayeredWindow(
-            self._hwnd, hdc_screen, ctypes.byref(pt_dst), ctypes.byref(sz),
-            hdc_mem, ctypes.byref(pt_src), 0, ctypes.byref(blend), ULW_ALPHA,
-        )
-
-        # Cleanup GDI
-        gdi32.SelectObject(hdc_mem, old_bmp)
-        gdi32.DeleteObject(hbmp)
-        gdi32.DeleteDC(hdc_mem)
-        user32.ReleaseDC(0, hdc_screen)
+            user32.UpdateLayeredWindow(
+                self._hwnd, hdc_screen, ctypes.byref(pt_dst), ctypes.byref(sz),
+                hdc_mem, ctypes.byref(pt_src), 0, ctypes.byref(blend), ULW_ALPHA,
+            )
+        finally:
+            gdi32.SelectObject(hdc_mem, old_bmp)
+            gdi32.DeleteObject(hbmp)
+            gdi32.DeleteDC(hdc_mem)
+            user32.ReleaseDC(0, hdc_screen)
 
     def _do_show(self) -> None:
         """Request the animation thread to show the window."""

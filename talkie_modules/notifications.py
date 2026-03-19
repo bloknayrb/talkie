@@ -1,7 +1,6 @@
 """Error notification system for Talkie — toast notifications and error chimes."""
 
 import winsound
-from typing import Optional
 
 from talkie_modules.logger import get_logger
 

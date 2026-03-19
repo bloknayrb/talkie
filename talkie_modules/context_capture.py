@@ -63,12 +63,6 @@ def get_target_window() -> tuple[int, str, str]:
         return (0, "", "")
 
 
-def get_target_hwnd() -> int:
-    """Return HWND of the current foreground window. Thin wrapper for backwards compat."""
-    hwnd, _, _ = get_target_window()
-    return hwnd
-
-
 def get_context(use_fallback: bool = True) -> str:
     """
     Capture text before the cursor using UIAutomation, falling back to clipboard.
@@ -109,6 +103,7 @@ def get_context(use_fallback: bool = True) -> str:
 def _get_context_fallback() -> str:
     """Fallback: select line via Shift+Home, copy, restore cursor."""
     original_clipboard: str = pyperclip.paste()
+    seq_before = ctypes.windll.user32.GetClipboardSequenceNumber()
     try:
         time.sleep(0.05)
         pyautogui.hotkey("shift", "home")
@@ -118,6 +113,13 @@ def _get_context_fallback() -> str:
         pyautogui.press("right")
 
         context: str = pyperclip.paste()
+
+        seq_after = ctypes.windll.user32.GetClipboardSequenceNumber()
+        if seq_after - seq_before > 1:
+            # Clipboard changed by something other than our Ctrl+C — don't clobber
+            logger.debug("Clipboard changed externally during fallback — skipping restore")
+            return ""
+
         pyperclip.copy(original_clipboard)
 
         if context == original_clipboard:

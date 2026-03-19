@@ -52,7 +52,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "casing. If it ends with terminal punctuation or is empty, begin a new sentence.\n"
         "7. Expand these snippet shortcuts when spoken: {snippets}.\n"
         "8. Prefer these spellings for specialized terms: {vocabulary}.\n"
-        "9. Output ONLY the cleaned text — no preamble, labels, quotes, or explanation."
+        "9. If <app_context> is provided, use it only to resolve ambiguities (e.g., "
+        "technical terms in a code editor, proper nouns from the window title). "
+        "Do NOT change formatting, formality, length, or style based on the "
+        "target application.\n"
+        "10. Output ONLY the cleaned text — no preamble, labels, quotes, or explanation."
     ),
     "models": dict(_default_models),
     "temperature": 0,

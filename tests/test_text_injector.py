@@ -147,10 +147,12 @@ class TestInjectText:
         inject_text(None)
         mock_clip.copy.assert_not_called()
 
+    @patch("talkie_modules.text_injector.time")
     @patch("talkie_modules.text_injector.keyboard")
     @patch("talkie_modules.text_injector.pyperclip")
-    def test_inject_without_hwnd(self, mock_clip: MagicMock, mock_kb: MagicMock) -> None:
+    def test_inject_without_hwnd(self, mock_clip: MagicMock, mock_kb: MagicMock, mock_time: MagicMock) -> None:
         from talkie_modules.text_injector import inject_text
+        mock_kb.is_pressed.return_value = False
         inject_text("hello world")
         mock_clip.copy.assert_called_once_with("hello world")
         mock_kb.send.assert_called_once_with("ctrl+v")
@@ -164,9 +166,9 @@ class TestInjectText:
         mock_restore: MagicMock, mock_time: MagicMock,
     ) -> None:
         from talkie_modules.text_injector import inject_text
+        mock_kb.is_pressed.return_value = False
         inject_text("hello", target_hwnd=999)
         mock_restore.assert_called_once_with(999)
-        mock_time.sleep.assert_called_once_with(0.075)
         mock_clip.copy.assert_called_once_with("hello")
         mock_kb.send.assert_called_once_with("ctrl+v")
 
@@ -180,10 +182,49 @@ class TestInjectText:
     ) -> None:
         """Even if restore fails, text still gets injected to current focus."""
         from talkie_modules.text_injector import inject_text
+        mock_kb.is_pressed.return_value = False
         inject_text("fallback text", target_hwnd=888)
         mock_restore.assert_called_once_with(888)
-        # Still sleeps and injects
-        mock_time.sleep.assert_called_once_with(0.075)
         mock_clip.copy.assert_called_once_with("fallback text")
+        mock_kb.send.assert_called_once_with("ctrl+v")
+
+
+# ---------------------------------------------------------------------------
+# Terminal detection + modifier release tests
+# ---------------------------------------------------------------------------
+
+class TestTerminalDetection:
+    """Test is_terminal_process helper."""
+
+    def test_known_terminal(self) -> None:
+        from talkie_modules.text_injector import is_terminal_process
+        assert is_terminal_process("warp.exe") is True
+
+    def test_case_insensitive(self) -> None:
+        from talkie_modules.text_injector import is_terminal_process
+        assert is_terminal_process("WindowsTerminal.exe") is True
+
+    def test_gui_app(self) -> None:
+        from talkie_modules.text_injector import is_terminal_process
+        assert is_terminal_process("chrome.exe") is False
+
+    def test_empty_string(self) -> None:
+        from talkie_modules.text_injector import is_terminal_process
+        assert is_terminal_process("") is False
+
+
+class TestModifierRelease:
+    """Test that stale modifier keys are released before paste."""
+
+    @patch("talkie_modules.text_injector.time")
+    @patch("talkie_modules.text_injector.keyboard")
+    @patch("talkie_modules.text_injector.pyperclip")
+    def test_stale_ctrl_released_before_paste(
+        self, mock_clip: MagicMock, mock_kb: MagicMock, mock_time: MagicMock,
+    ) -> None:
+        from talkie_modules.text_injector import inject_text
+        mock_kb.is_pressed.side_effect = lambda k: k == "ctrl"
+        inject_text("text")
+        mock_kb.release.assert_any_call("ctrl")
         mock_kb.send.assert_called_once_with("ctrl+v")
 

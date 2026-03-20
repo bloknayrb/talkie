@@ -18,6 +18,27 @@ _FOCUS_RESTORE_DELAY = 0.075
 # Win32 constants for _restore_focus
 _SW_RESTORE = 9
 
+# Terminals and TUI-hosting apps where synthetic Ctrl+V disrupts the running
+# process (e.g. Claude Code's Ink TUI interprets ^V as a control character
+# instead of Warp/WT handling it as a clipboard paste).
+_TERMINAL_PROCESSES = frozenset({
+    "warp.exe",
+    "windowsterminal.exe",
+    "cmd.exe",
+    "powershell.exe",
+    "pwsh.exe",
+    "conhost.exe",
+    "alacritty.exe",
+    "wezterm-gui.exe",
+    "hyper.exe",
+    "mintty.exe",
+})
+
+
+def is_terminal_process(process_name: str) -> bool:
+    """Check whether a process name belongs to a known terminal emulator."""
+    return process_name.lower() in _TERMINAL_PROCESSES
+
 
 def _restore_focus(hwnd: int) -> bool:
     """Restore foreground focus to the given HWND.
@@ -82,11 +103,14 @@ def _restore_focus(hwnd: int) -> bool:
             user32.AttachThreadInput(current_tid, fg_tid, False)
 
 
-def inject_text(text: Optional[str], target_hwnd: int = 0) -> None:
+def inject_text(text: Optional[str], target_hwnd: int = 0, process_name: str = "") -> None:
     """Paste text into the focused application via clipboard.
 
     If target_hwnd is provided, attempt to restore focus to that window first.
     On failure, falls through to inject at whatever window currently has focus.
+
+    Terminal targets get clipboard-only mode (no synthetic Ctrl+V) to avoid
+    disrupting TUI apps like Claude Code that interpret ^V as a control char.
     """
     if not text:
         logger.debug("Nothing to inject (empty text)")
@@ -102,6 +126,18 @@ def inject_text(text: Optional[str], target_hwnd: int = 0) -> None:
             logger.info("Focus restore failed for HWND=%d, injecting to current focus", target_hwnd)
 
     pyperclip.copy(text)
+
+    # Defensive: release any stale modifier keys before sending synthetic paste.
+    # The hotkey combo (e.g. Ctrl+Win) may leave Ctrl in a held state if
+    # the user's release timing is slightly off.
+    for mod in ("ctrl", "shift", "alt"):
+        try:
+            if keyboard.is_pressed(mod):
+                keyboard.release(mod)
+        except Exception:
+            pass
+    time.sleep(0.03)
+
     keyboard.send("ctrl+v")
     logger.info("Injected %d chars", len(text))
 

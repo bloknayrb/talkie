@@ -16,7 +16,7 @@ from talkie_modules.hotkey_manager import HotkeyManager
 from talkie_modules.context_capture import get_context, get_target_window
 from talkie_modules.profile_matcher import resolve_profile, apply_profile
 from talkie_modules.api_client import transcribe_audio, process_text_llm
-from talkie_modules.text_injector import inject_text
+from talkie_modules.text_injector import inject_text, is_terminal_process
 from talkie_modules.settings_server import SettingsServer
 from talkie_modules.status_indicator_native import NativeStatusIndicator
 from talkie_modules.state import StateMachine, AppState
@@ -155,7 +155,9 @@ class TalkieApp:
         pending_title = self._pending_title
 
         def run_pipeline() -> None:
-            context = get_context(use_fallback=True)  # Modifiers released; fallback works
+            # Skip keyboard-based context fallback for terminals — the fallback
+            # sends Shift+Home, Ctrl+C, Right which disrupts TUI apps like Claude Code.
+            context = get_context(use_fallback=not is_terminal_process(pending_process))
             audio_data = stop_recording()
             clean_context = self._strip_prior_injection(context)
             elapsed = time.time() - press_time
@@ -203,7 +205,7 @@ class TalkieApp:
                     transcription, clean_context, config,
                     process_name=pending_process, window_title=pending_title,
                 )
-                inject_text(processed_text, target_hwnd)
+                inject_text(processed_text, target_hwnd, process_name=pending_process)
                 self._last_injected = processed_text
             except Exception as e:
                 is_expected = isinstance(e, TalkieError)

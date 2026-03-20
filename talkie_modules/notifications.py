@@ -63,3 +63,17 @@ def notify_error(message: str) -> None:
     """Play error chime and show toast notification for pipeline errors."""
     play_error_chime()
     show_toast("Talkie Error", message)
+
+
+def play_clipboard_chime() -> None:
+    """Play a subtle chime indicating text was copied to clipboard (non-blocking)."""
+    try:
+        winsound.MessageBeep(winsound.MB_ICONASTERISK)
+    except Exception as e:
+        logger.debug("Could not play clipboard chime: %s", e)
+
+
+def notify_clipboard_ready() -> None:
+    """Notify user that dictated text is on the clipboard, ready to paste."""
+    play_clipboard_chime()
+    show_toast("Talkie", "Text copied to clipboard — paste with Ctrl+V")

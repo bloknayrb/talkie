@@ -49,6 +49,8 @@ MODEL_SIZES_MB = {
     "large-v3": 3100,
 }
 
+VALID_MODELS = frozenset(_MODEL_FILES)
+
 _download_lock = threading.Lock()
 
 
@@ -107,6 +109,15 @@ def _download_file(
                     if progress_cb:
                         progress_cb(downloaded, total)
 
+        # Basic integrity: verify download isn't empty or an HTML error page
+        file_size = os.path.getsize(tmp_path)
+        if file_size == 0:
+            raise IOError("Downloaded file is empty")
+        with open(tmp_path, "rb") as f:
+            header = f.read(16)
+        if header.startswith(b"<!") or header.startswith(b"<html"):
+            raise IOError("Download returned an HTML error page instead of binary data")
+
         os.replace(tmp_path, dest)
     except Exception:
         # Clean up partial download
@@ -149,7 +160,7 @@ def download_model(
 
 
 def delete_model(model_name: str) -> bool:
-    """Delete a downloaded model. Returns True if deleted."""
+    """Delete a downloaded model. Returns True if deleted, raises on lock."""
     path = get_model_path(model_name)
     try:
         os.unlink(path)
@@ -157,6 +168,11 @@ def delete_model(model_name: str) -> bool:
         return True
     except FileNotFoundError:
         return False
+    except PermissionError:
+        raise TalkieConfigError(
+            f"Cannot delete model '{model_name}' — it may be in use. "
+            "Stop any active transcription and try again."
+        )
 
 
 def transcribe(audio_data: npt.NDArray, model_name: str) -> str:
@@ -193,13 +209,19 @@ def transcribe(audio_data: npt.NDArray, model_name: str) -> str:
 
         logger.info("Running whisper-cli: model=%s, wav=%d bytes", model_name, os.path.getsize(wav_path))
 
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        except subprocess.TimeoutExpired:
+            raise TalkieAPIError(
+                "Transcription timed out. Try a smaller model or shorter recording.",
+                "local_whisper",
+            )
 
         if result.returncode != 0:
             stderr = result.stderr.strip()

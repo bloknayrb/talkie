@@ -1,6 +1,7 @@
 """Ollama utilities — reachability check and model discovery."""
 
 import json
+import urllib.error
 import urllib.request
 from typing import Optional
 
@@ -23,7 +24,7 @@ def is_running() -> bool:
         )
         urllib.request.urlopen(req, timeout=_TIMEOUT)
         return True
-    except Exception:
+    except (urllib.error.URLError, OSError):
         return False
 
 
@@ -36,13 +37,12 @@ def list_models() -> Optional[list[str]]:
         )
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
             data = json.loads(resp.read().decode())
-            models = data.get("models", [])
-            # Each model entry has a "name" field like "llama3.2:latest"
-            # Strip the ":latest" tag for cleaner display
-            return [
-                m["name"].split(":")[0] if ":" in m["name"] else m["name"]
-                for m in models
-            ]
-    except Exception as e:
-        logger.debug("Failed to query Ollama models: %s", e)
+    except (urllib.error.URLError, OSError):
         return None
+
+    try:
+        models = data.get("models", [])
+        return [m["name"].removesuffix(":latest") for m in models]
+    except (KeyError, TypeError) as e:
+        logger.warning("Failed to parse Ollama model list: %s", e)
+        return []

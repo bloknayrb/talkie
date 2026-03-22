@@ -738,11 +738,13 @@ def create_app(
 
     @app.route("/api/local/whisper/download-model", method="POST")
     def whisper_download_model():
-        from talkie_modules.local_whisper import download_model
+        from talkie_modules.local_whisper import download_model, VALID_MODELS
         data = bottle.request.json
         if not data or "model" not in data:
             bottle.abort(400, "Missing 'model' field")
         model_name = data["model"]
+        if model_name not in VALID_MODELS:
+            bottle.abort(400, f"Unknown model: {model_name}")
         return _start_whisper_download(
             model_name, lambda cb: download_model(model_name, cb),
         )

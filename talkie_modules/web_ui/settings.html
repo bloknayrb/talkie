@@ -57,18 +57,11 @@
                         <div class="step-body">
                             <div class="form-row">
                                 <label>STT:</label>
-                                <select id="qs-stt-provider">
-                                    <option value="openai">OpenAI</option>
-                                    <option value="groq">Groq</option>
-                                </select>
+                                <select id="qs-stt-provider"></select>
                             </div>
                             <div class="form-row">
                                 <label>LLM:</label>
-                                <select id="qs-llm-provider">
-                                    <option value="openai">OpenAI</option>
-                                    <option value="groq">Groq</option>
-                                    <option value="anthropic">Anthropic</option>
-                                </select>
+                                <select id="qs-llm-provider"></select>
                             </div>
                         </div>
                     </div>
@@ -103,30 +96,50 @@
                 <div class="form-group">
                     <div class="form-row">
                         <label for="stt-provider">STT Provider:</label>
-                        <select id="stt-provider">
-                            <option value="openai">OpenAI</option>
-                            <option value="groq">Groq</option>
-                        </select>
+                        <select id="stt-provider"></select>
                     </div>
                     <div class="form-row">
                         <label for="stt-model">STT Model:</label>
                         <select id="stt-model"></select>
                     </div>
                 </div>
+
+                <!-- Local Whisper setup (shown when local_whisper selected) -->
+                <div class="form-group" id="whisper-setup" style="display:none;">
+                    <h3>Local Whisper Setup</h3>
+                    <div id="whisper-binary-status"></div>
+                    <div id="whisper-model-info">
+                        <table class="model-table">
+                            <thead><tr><th>Model</th><th>Size</th><th>Speed</th><th>Quality</th><th></th></tr></thead>
+                            <tbody id="whisper-model-rows"></tbody>
+                        </table>
+                    </div>
+                    <div id="whisper-download-progress" style="display:none;">
+                        <div class="progress-track">
+                            <div class="progress-fill" id="whisper-progress-fill"></div>
+                        </div>
+                        <span id="whisper-progress-text" class="progress-text">0%</span>
+                    </div>
+                    <span class="save-status" id="whisper-status"></span>
+                </div>
+
                 <div class="form-group">
                     <div class="form-row">
                         <label for="llm-provider">LLM Provider:</label>
-                        <select id="llm-provider">
-                            <option value="openai">OpenAI</option>
-                            <option value="groq">Groq</option>
-                            <option value="anthropic">Anthropic</option>
-                        </select>
+                        <select id="llm-provider"></select>
                     </div>
                     <div class="form-row">
                         <label for="llm-model">LLM Model:</label>
                         <select id="llm-model"></select>
                     </div>
                 </div>
+
+                <!-- Ollama status (shown when ollama selected) -->
+                <div class="form-group" id="ollama-setup" style="display:none;">
+                    <h3>Ollama Status</h3>
+                    <div id="ollama-status-indicator"></div>
+                </div>
+
                 <button class="btn btn-primary" id="save-providers">Save Providers</button>
             </section>
 

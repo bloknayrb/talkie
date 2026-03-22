@@ -6,7 +6,12 @@ import numpy as np
 import pytest
 
 from talkie_modules import api_client
-from talkie_modules.api_client import transcribe_audio, process_text_llm, _resolve_key
+from talkie_modules.api_client import (
+    transcribe_audio,
+    process_text_llm,
+    test_connection as check_connection,
+    _resolve_key,
+)
 from talkie_modules.exceptions import TalkieAPIError, TalkieConfigError
 
 
@@ -19,18 +24,28 @@ def _clear_client_cache():
 
 
 class TestResolveKey:
+    _OPENAI_INFO = {"requires_key": True, "key_name": "openai_key", "key_env": "OPENAI_API_KEY"}
+
     def test_from_config(self) -> None:
         config = {"openai_key": "sk-test123456789012345"}
-        assert _resolve_key(config, "openai_key", "OPENAI_API_KEY") == "sk-test123456789012345"
+        assert _resolve_key(config, self._OPENAI_INFO) == "sk-test123456789012345"
 
     def test_from_env(self) -> None:
         with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-env-key-12345678901"}):
             config = {"openai_key": ""}
-            assert _resolve_key(config, "openai_key", "OPENAI_API_KEY") == "sk-env-key-12345678901"
+            assert _resolve_key(config, self._OPENAI_INFO) == "sk-env-key-12345678901"
 
     def test_missing_raises(self) -> None:
-        with pytest.raises(TalkieConfigError, match="API key missing"):
-            _resolve_key({}, "openai_key", "NONEXISTENT_VAR_12345")
+        with patch.dict("os.environ", {}, clear=False):
+            # Ensure the env var isn't set
+            import os
+            os.environ.pop("OPENAI_API_KEY", None)
+            with pytest.raises(TalkieConfigError, match="API key missing"):
+                _resolve_key({}, self._OPENAI_INFO)
+
+    def test_keyless_provider_returns_empty(self) -> None:
+        info = {"requires_key": False}
+        assert _resolve_key({}, info) == ""
 
 
 class TestTranscribeAudio:
@@ -193,3 +208,46 @@ class TestProcessTextLLM:
         call_args = mock_client.chat.completions.create.call_args
         user_msg = call_args[1]["messages"][1]["content"]
         assert "<app_context>" not in user_msg
+
+
+class TestLocalWhisperDispatch:
+    @patch("talkie_modules.local_whisper.transcribe")
+    def test_dispatches_to_local_whisper(self, mock_local: MagicMock) -> None:
+        mock_local.return_value = "local result"
+        config = {"stt_provider": "local_whisper", "models": {"local_whisper_stt": "tiny"}}
+        audio = np.zeros((16000, 1), dtype=np.float32)
+        result = transcribe_audio(audio, config)
+        assert result == "local result"
+        mock_local.assert_called_once_with(audio, "tiny")
+
+    @patch("talkie_modules.local_whisper.transcribe")
+    def test_uses_default_model(self, mock_local: MagicMock) -> None:
+        mock_local.return_value = "result"
+        config = {"stt_provider": "local_whisper", "models": {}}
+        audio = np.zeros((16000, 1), dtype=np.float32)
+        transcribe_audio(audio, config)
+        # default_stt for local_whisper is "small"
+        mock_local.assert_called_once_with(audio, "small")
+
+
+class TestTestConnection:
+    @patch("talkie_modules.local_whisper.is_binary_available", return_value=False)
+    def test_local_whisper_no_binary(self, _mock: MagicMock) -> None:
+        with pytest.raises(TalkieConfigError, match="Whisper engine not downloaded"):
+            check_connection("local_whisper")
+
+    @patch("talkie_modules.local_whisper.get_downloaded_models", return_value=[])
+    @patch("talkie_modules.local_whisper.is_binary_available", return_value=True)
+    def test_local_whisper_no_models(self, _m1: MagicMock, _m2: MagicMock) -> None:
+        with pytest.raises(TalkieConfigError, match="No whisper models downloaded"):
+            check_connection("local_whisper")
+
+    @patch("talkie_modules.local_whisper.get_downloaded_models", return_value=["small"])
+    @patch("talkie_modules.local_whisper.is_binary_available", return_value=True)
+    def test_local_whisper_ok(self, _m1: MagicMock, _m2: MagicMock) -> None:
+        check_connection("local_whisper")  # should not raise
+
+    @patch("talkie_modules.ollama_utils.is_running", return_value=False)
+    def test_ollama_not_running(self, _mock: MagicMock) -> None:
+        with pytest.raises(TalkieConfigError, match="Ollama is not running"):
+            check_connection("ollama")

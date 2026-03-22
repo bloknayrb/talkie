@@ -24,7 +24,7 @@ for _pid, _pinfo in PROVIDERS.items():
 DEFAULT_CONFIG: dict[str, Any] = {
     "api_provider": "openai",
     "stt_provider": "openai",
-    **{p["key_name"]: "" for p in PROVIDERS.values()},
+    **{p["key_name"]: "" for p in PROVIDERS.values() if p.get("requires_key", True)},
     "hotkey": "ctrl+win",
     "snippets": {
         "gm": "Good morning",
@@ -167,24 +167,26 @@ def get_api_key(key_name: str) -> str:
 def get_missing_keys(config: dict[str, Any]) -> list[str]:
     """
     Check which required API keys are missing for the current provider configuration.
-    Returns a list of human-readable descriptions of missing keys.
+    Skips providers that don't require keys. Returns human-readable descriptions.
     """
     missing: list[str] = []
-    # Map providers to the keyring key name they require
     stt_provider = config.get("stt_provider", "openai")
     llm_provider = config.get("api_provider", "openai")
 
-    stt_key_name = PROVIDER_KEY_MAP.get(stt_provider)
-    llm_key_name = PROVIDER_KEY_MAP.get(llm_provider)
+    stt_info = PROVIDERS.get(stt_provider, {})
+    llm_info = PROVIDERS.get(llm_provider, {})
 
-    if stt_key_name and not get_api_key(stt_key_name):
-        missing.append(f"STT ({stt_provider})")
+    if stt_info.get("requires_key", True):
+        stt_key_name = PROVIDER_KEY_MAP.get(stt_provider)
+        if stt_key_name and not get_api_key(stt_key_name):
+            missing.append(f"STT ({stt_provider})")
 
-    if llm_key_name and not get_api_key(llm_key_name):
-        # Avoid duplicate if same provider
-        label = f"LLM ({llm_provider})"
-        if label not in [m for m in missing]:
-            missing.append(label)
+    if llm_info.get("requires_key", True):
+        llm_key_name = PROVIDER_KEY_MAP.get(llm_provider)
+        if llm_key_name and not get_api_key(llm_key_name):
+            label = f"LLM ({llm_provider})"
+            if label not in missing:
+                missing.append(label)
 
     return missing
 

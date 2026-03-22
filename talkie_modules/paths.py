@@ -22,3 +22,10 @@ _BUNDLE_DIR: Final[str] = _get_bundle_dir()
 ASSETS_DIR: Final[str] = os.path.join(_BUNDLE_DIR, 'assets')
 CONFIG_FILE: Final[str] = os.path.join(BASE_DIR, 'config.json')
 LOG_FILE: Final[str] = os.path.join(BASE_DIR, 'talkie.log')
+
+# Local provider data — machine-local, not roaming
+DATA_DIR: Final[str] = os.path.join(
+    os.environ.get('LOCALAPPDATA', BASE_DIR), 'Talkie',
+)
+MODELS_DIR: Final[str] = os.path.join(DATA_DIR, 'models')
+BIN_DIR: Final[str] = os.path.join(DATA_DIR, 'bin')

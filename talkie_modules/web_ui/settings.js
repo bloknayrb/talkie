@@ -10,6 +10,7 @@ let hotkeyPollTimer = null;
 function clearAllPollTimers() {
     if (hotkeyPollTimer) { clearInterval(hotkeyPollTimer); hotkeyPollTimer = null; }
     if (updatePollTimer) { clearInterval(updatePollTimer); updatePollTimer = null; }
+    if (whisperPollTimer) { clearInterval(whisperPollTimer); whisperPollTimer = null; }
 }
 
 // ---- Navigation ----
@@ -71,6 +72,9 @@ function populateUI() {
     // Store default system prompt from backend
     defaultSystemPrompt = config._default_system_prompt || '';
 
+    // Build dynamic provider dropdowns from backend data
+    buildProviderDropdowns();
+
     // Providers
     setVal('stt-provider', config.stt_provider || 'openai');
     setVal('llm-provider', config.api_provider || 'openai');
@@ -118,6 +122,9 @@ function populateUI() {
     // About (version bundled in config response)
     document.getElementById('about-version').textContent = config._version || '-';
 
+    // Local provider panels (whisper setup, ollama status)
+    updateLocalProviderUI();
+
     // If missing keys, show Quick Start
     if (config._missing_keys && config._missing_keys.length > 0) {
         showSection('quickstart');
@@ -156,18 +163,242 @@ function fillSelect(id, options, selected) {
     });
 }
 
-document.getElementById('stt-provider').addEventListener('change', updateModelDropdowns);
-document.getElementById('llm-provider').addEventListener('change', updateModelDropdowns);
+// ---- Dynamic Provider Dropdowns ----
+
+function buildProviderDropdowns() {
+    const providers = config._providers || [];
+    const sttProviders = providers.filter(p => p.has_stt);
+    const llmProviders = providers.filter(p => p.has_llm);
+
+    fillProviderSelect('stt-provider', sttProviders);
+    fillProviderSelect('qs-stt-provider', sttProviders);
+    fillProviderSelect('llm-provider', llmProviders);
+    fillProviderSelect('qs-llm-provider', llmProviders);
+}
+
+function fillProviderSelect(id, providers) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = '';
+    for (const prov of providers) {
+        const o = document.createElement('option');
+        o.value = prov.id;
+        o.textContent = prov.label;
+        el.appendChild(o);
+    }
+}
+
+document.getElementById('stt-provider').addEventListener('change', () => {
+    updateModelDropdowns();
+    updateLocalProviderUI();
+});
+document.getElementById('llm-provider').addEventListener('change', () => {
+    updateModelDropdowns();
+    updateLocalProviderUI();
+});
 
 // Sync QS providers with main providers
 document.getElementById('qs-stt-provider').addEventListener('change', e => {
     document.getElementById('stt-provider').value = e.target.value;
     updateModelDropdowns();
+    updateLocalProviderUI();
 });
 document.getElementById('qs-llm-provider').addEventListener('change', e => {
     document.getElementById('llm-provider').value = e.target.value;
     updateModelDropdowns();
+    updateLocalProviderUI();
 });
+
+// ---- Local Provider UI ----
+
+let _lastSttProv = null, _lastLlmProv = null;
+
+function updateLocalProviderUI() {
+    const sttProv = document.getElementById('stt-provider').value;
+    const llmProv = document.getElementById('llm-provider').value;
+
+    // Whisper setup panel — only refresh when provider actually changes
+    const whisperSetup = document.getElementById('whisper-setup');
+    if (whisperSetup) {
+        const show = sttProv === 'local_whisper';
+        whisperSetup.style.display = show ? 'block' : 'none';
+        if (show && sttProv !== _lastSttProv) refreshWhisperStatus();
+    }
+
+    // Ollama setup panel — only refresh when provider actually changes
+    const ollamaSetup = document.getElementById('ollama-setup');
+    if (ollamaSetup) {
+        const show = llmProv === 'ollama';
+        ollamaSetup.style.display = show ? 'block' : 'none';
+        if (show && llmProv !== _lastLlmProv) refreshOllamaStatus();
+    }
+
+    _lastSttProv = sttProv;
+    _lastLlmProv = llmProv;
+}
+
+// ---- Local Whisper Management ----
+
+let whisperPollTimer = null;
+
+async function refreshWhisperStatus() {
+    const data = await api('GET', '/api/local/whisper/status');
+    if (data.status === 'error') return;
+
+    // Binary status
+    const binaryEl = document.getElementById('whisper-binary-status');
+    if (binaryEl) {
+        if (data.binary_installed) {
+            binaryEl.innerHTML = '<span class="key-status ok">Whisper engine installed</span>';
+        } else {
+            binaryEl.innerHTML = '<span class="key-status">Whisper engine not installed</span> ' +
+                '<button class="btn btn-sm btn-primary" id="download-whisper-bin">Download Engine (~5 MB)</button>';
+            const btn = document.getElementById('download-whisper-bin');
+            if (btn) btn.addEventListener('click', downloadWhisperBinary);
+        }
+    }
+
+    // Model table
+    const tbody = document.getElementById('whisper-model-rows');
+    if (tbody) {
+        tbody.innerHTML = '';
+        const modelInfo = {
+            'tiny':     { speed: 'Fastest',  quality: 'Basic' },
+            'base':     { speed: 'Fast',     quality: 'Good' },
+            'small':    { speed: 'Moderate', quality: 'Recommended' },
+            'medium':   { speed: 'Slow',     quality: 'Better' },
+            'large-v3': { speed: 'Slowest',  quality: 'Best' },
+        };
+        const downloaded = data.downloaded_models || [];
+        const sizes = data.model_sizes_mb || {};
+
+        for (const [name, info] of Object.entries(modelInfo)) {
+            const tr = document.createElement('tr');
+            const isDownloaded = downloaded.includes(name);
+            const sizeMB = sizes[name] || '?';
+            const sizeLabel = sizeMB >= 1000 ? (sizeMB / 1000).toFixed(1) + ' GB' : sizeMB + ' MB';
+
+            tr.innerHTML = `<td>${name}${name === 'small' ? ' *' : ''}</td>` +
+                `<td>${sizeLabel}</td><td>${info.speed}</td><td>${info.quality}</td>` +
+                `<td>${isDownloaded
+                    ? '<span class="key-status ok">Downloaded</span>'
+                    : `<button class="btn btn-sm" data-model="${name}">Download</button>`
+                }</td>`;
+            tbody.appendChild(tr);
+        }
+
+        // Attach download handlers
+        tbody.querySelectorAll('button[data-model]').forEach(btn => {
+            btn.addEventListener('click', () => downloadWhisperModel(btn.dataset.model));
+        });
+    }
+
+    // Update model dropdown to only show downloaded models
+    if (document.getElementById('stt-provider').value === 'local_whisper') {
+        const downloaded = data.downloaded_models || [];
+        if (downloaded.length > 0) {
+            models.stt['local_whisper'] = downloaded;
+        }
+        const currentModel = getModel('stt', 'local_whisper');
+        fillSelect('stt-model', downloaded, currentModel || 'small');
+    }
+
+    // Handle active download state
+    if (data.download && data.download.downloading) {
+        showWhisperProgress(data.download.progress);
+        startWhisperPoll();
+    }
+}
+
+async function downloadWhisperBinary() {
+    const result = await api('POST', '/api/local/whisper/download-binary');
+    if (result.status === 'downloading') {
+        showWhisperProgress(0);
+        startWhisperPoll();
+    }
+}
+
+async function downloadWhisperModel(modelName) {
+    const result = await api('POST', '/api/local/whisper/download-model', { model: modelName });
+    if (result.status === 'downloading') {
+        showWhisperProgress(0);
+        startWhisperPoll();
+    }
+}
+
+function showWhisperProgress(pct) {
+    const container = document.getElementById('whisper-download-progress');
+    if (container) container.style.display = 'block';
+    const fill = document.getElementById('whisper-progress-fill');
+    if (fill) fill.style.width = pct + '%';
+    const text = document.getElementById('whisper-progress-text');
+    if (text) text.textContent = pct + '%';
+}
+
+function hideWhisperProgress() {
+    const container = document.getElementById('whisper-download-progress');
+    if (container) container.style.display = 'none';
+}
+
+function startWhisperPoll() {
+    if (whisperPollTimer) return;
+    whisperPollTimer = setInterval(async () => {
+        const data = await api('GET', '/api/local/whisper/download');
+        if (data.downloading) {
+            showWhisperProgress(data.progress);
+        } else {
+            clearInterval(whisperPollTimer);
+            whisperPollTimer = null;
+            hideWhisperProgress();
+            if (data.error) {
+                const statusEl = document.getElementById('whisper-status');
+                if (statusEl) {
+                    statusEl.textContent = 'Download failed: ' + data.error;
+                    statusEl.className = 'save-status error';
+                }
+            }
+            refreshWhisperStatus();
+        }
+    }, 500);
+}
+
+// ---- Ollama Status ----
+
+async function refreshOllamaStatus() {
+    const indicator = document.getElementById('ollama-status-indicator');
+    if (!indicator) return;
+
+    indicator.innerHTML = '<span class="key-status testing">Checking Ollama...</span>';
+    const data = await api('GET', '/api/local/ollama/models');
+
+    if (data.status === 'not_running') {
+        indicator.innerHTML =
+            '<div class="ollama-warning">' +
+            '<span class="key-status error">Ollama is not running</span>' +
+            '<p class="hint">Install Ollama from <a href="https://ollama.com/download" target="_blank">ollama.com/download</a>, ' +
+            'then start it and refresh this page.</p>' +
+            '</div>';
+        return;
+    }
+
+    if (!data.models || data.models.length === 0) {
+        indicator.innerHTML =
+            '<div class="ollama-warning">' +
+            '<span class="key-status ok">Ollama is running</span>' +
+            '<p class="hint">No models installed. Run <code>ollama pull llama3.2</code> in a terminal to get started.</p>' +
+            '</div>';
+        return;
+    }
+
+    indicator.innerHTML = '<span class="key-status ok">Ollama connected (' + data.models.length + ' models)</span>';
+
+    // Update model dropdown with actual Ollama models
+    models.llm['ollama'] = data.models;
+    if (document.getElementById('llm-provider').value === 'ollama') {
+        const currentModel = getModel('llm', 'ollama');
+        fillSelect('llm-model', data.models, currentModel || data.models[0]);
+    }
+}
 
 // ---- Save Providers ----
 
@@ -252,9 +483,13 @@ async function testKey(provider) {
 function buildKeyGroups() {
     const container = document.getElementById('key-groups');
     if (!container) return;
+    container.innerHTML = '';
 
-    const providers = config._providers || [];
-    if (!providers.length) return;
+    const providers = (config._providers || []).filter(p => p.requires_key);
+    if (!providers.length) {
+        container.innerHTML = '<p class="hint">No API keys needed — you\'re using local providers.</p>';
+        return;
+    }
 
     for (const prov of providers) {
         const group = document.createElement('div');
@@ -480,25 +715,29 @@ async function updateQuickStartBadges() {
     // Step 1: Providers — always done (they have defaults)
     setBadge('providers', true);
 
-    // Step 2: Keys — use cache if available, otherwise fetch
+    // Step 2: Keys/Setup — check provider readiness
     const sttProv = document.getElementById('stt-provider').value || config.stt_provider || 'openai';
     const llmProv = document.getElementById('llm-provider').value || config.api_provider || 'openai';
 
-    const providers = new Set([sttProv, llmProv]);
-    let allKeysSet = true;
+    const providerIds = new Set([sttProv, llmProv]);
+    const providerMap = {};
+    for (const p of (config._providers || [])) providerMap[p.id] = p;
 
-    for (const p of providers) {
-        let data = _keyStatusCache[p];
-        if (!data) {
-            data = await api('GET', `/api/keys/${p}`);
-            _keyStatusCache[p] = data;
+    let allReady = true;
+    for (const pid of providerIds) {
+        const prov = providerMap[pid];
+        if (!prov || prov.requires_key) {
+            // Cloud provider — check key status
+            let data = _keyStatusCache[pid];
+            if (!data) {
+                data = await api('GET', `/api/keys/${pid}`);
+                _keyStatusCache[pid] = data;
+            }
+            if (!data.exists) { allReady = false; break; }
         }
-        if (!data.exists) {
-            allKeysSet = false;
-            break;
-        }
+        // Keyless providers are always "key-ready"
     }
-    setBadge('keys', allKeysSet);
+    setBadge('keys', allReady);
 
     // Step 3: Try it — can't auto-detect, stays unchecked unless keys are set
     setBadge('tryit', false);

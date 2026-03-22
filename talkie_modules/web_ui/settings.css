@@ -741,3 +741,53 @@ input[type="range"] {
     font-size: 12px;
     font-style: italic;
 }
+
+/* Local Provider Setup */
+
+.model-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+}
+
+.model-table th,
+.model-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.model-table th {
+    color: var(--text-muted);
+    font-weight: 500;
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.model-table td:last-child {
+    text-align: right;
+}
+
+#whisper-setup h3,
+#ollama-setup h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-primary);
+}
+
+.ollama-warning {
+    margin-top: 8px;
+}
+
+.ollama-warning .hint {
+    margin-top: 6px;
+}
+
+.ollama-warning code {
+    background: var(--bg-secondary);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 13px;
+}

@@ -19,18 +19,28 @@ def _clear_client_cache():
 
 
 class TestResolveKey:
+    _OPENAI_INFO = {"requires_key": True, "key_name": "openai_key", "key_env": "OPENAI_API_KEY"}
+
     def test_from_config(self) -> None:
         config = {"openai_key": "sk-test123456789012345"}
-        assert _resolve_key(config, "openai_key", "OPENAI_API_KEY") == "sk-test123456789012345"
+        assert _resolve_key(config, self._OPENAI_INFO) == "sk-test123456789012345"
 
     def test_from_env(self) -> None:
         with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-env-key-12345678901"}):
             config = {"openai_key": ""}
-            assert _resolve_key(config, "openai_key", "OPENAI_API_KEY") == "sk-env-key-12345678901"
+            assert _resolve_key(config, self._OPENAI_INFO) == "sk-env-key-12345678901"
 
     def test_missing_raises(self) -> None:
-        with pytest.raises(TalkieConfigError, match="API key missing"):
-            _resolve_key({}, "openai_key", "NONEXISTENT_VAR_12345")
+        with patch.dict("os.environ", {}, clear=False):
+            # Ensure the env var isn't set
+            import os
+            os.environ.pop("OPENAI_API_KEY", None)
+            with pytest.raises(TalkieConfigError, match="API key missing"):
+                _resolve_key({}, self._OPENAI_INFO)
+
+    def test_keyless_provider_returns_empty(self) -> None:
+        info = {"requires_key": False}
+        assert _resolve_key({}, info) == ""
 
 
 class TestTranscribeAudio:

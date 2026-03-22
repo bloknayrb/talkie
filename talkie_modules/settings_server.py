@@ -22,6 +22,7 @@ from talkie_modules.config_manager import (
     validate_api_key_format,
     get_missing_keys,
 )
+from talkie_modules.exceptions import TalkieConfigError
 from talkie_modules.logger import get_logger
 from talkie_modules.providers import (
     PROVIDERS,
@@ -43,6 +44,22 @@ _VALID_STT_PROVIDERS = frozenset(STT_MODELS)
 _VALID_LLM_PROVIDERS = frozenset(LLM_MODELS)
 
 _ALLOWED_UPDATE_PREFIX = "https://github.com/bloknayrb/talkie/releases/"
+
+
+def _provider_metadata_list() -> list[dict]:
+    """Build provider metadata for frontend consumption. Used by multiple routes."""
+    return [
+        {
+            "id": pid,
+            "label": pinfo["label"],
+            "requires_key": pinfo.get("requires_key", True),
+            "placeholder": pinfo.get("key_prefix", "") + "..." if pinfo.get("requires_key", True) else "",
+            "url": pinfo.get("key_url", ""),
+            "has_stt": pinfo["stt_models"] is not None,
+            "has_llm": pinfo["llm_models"] is not None,
+        }
+        for pid, pinfo in PROVIDERS.items()
+    ]
 
 _NUMERIC_VALIDATORS = {
     "temperature": (float, 0.0, 2.0),
@@ -136,25 +153,22 @@ def create_app(
         # Bundle data that the frontend needs at load time to avoid
         # multiple sequential round trips on a single-threaded server.
         config["_models"] = {"stt": STT_MODELS, "llm": LLM_MODELS}
-        config["_providers"] = [
-            {
-                "id": pid,
-                "label": pinfo["label"],
-                "placeholder": pinfo["key_prefix"] + "...",
-                "url": pinfo["key_url"],
-                "has_stt": pinfo["stt_models"] is not None,
-                "has_llm": pinfo["llm_models"] is not None,
-            }
-            for pid, pinfo in PROVIDERS.items()
-        ]
+        config["_providers"] = _provider_metadata_list()
         config["_key_statuses"] = {}
-        for pid in PROVIDERS:
-            key_name = f"{pid}_key"
-            value = get_api_key(key_name)
-            config["_key_statuses"][pid] = {
-                "exists": bool(value),
-                "masked": _mask_key(key_name, value),
-            }
+        for pid, pinfo in PROVIDERS.items():
+            if pinfo.get("requires_key", True):
+                key_name = f"{pid}_key"
+                # Keys already loaded into config by load_config() — avoid re-reading keyring
+                value = config.get(key_name, "")
+                config["_key_statuses"][pid] = {
+                    "exists": bool(value),
+                    "masked": _mask_key(key_name, value),
+                }
+            else:
+                config["_key_statuses"][pid] = {
+                    "exists": True,
+                    "masked": "",
+                }
         config["_version"] = get_version() if get_version else "unknown"
 
         return config
@@ -215,16 +229,23 @@ def create_app(
 
     # ---- API Keys ----
 
+    def _require_keyed_provider(provider):
+        """Reject providers that don't use API keys."""
+        _require_valid_provider(provider)
+        pinfo = PROVIDERS.get(provider, {})
+        if not pinfo.get("requires_key", True):
+            bottle.abort(400, f"Provider {provider!r} does not use API keys")
+
     @app.route("/api/keys/<provider>", method="GET")
     def get_key_status(provider):
-        _require_valid_provider(provider)
+        _require_keyed_provider(provider)
         key_name = f"{provider}_key"
         value = get_api_key(key_name)
         return {"exists": bool(value), "masked": _mask_key(key_name, value)}
 
     @app.route("/api/keys/<provider>", method="POST")
     def save_key(provider):
-        _require_valid_provider(provider)
+        _require_keyed_provider(provider)
         key_name = f"{provider}_key"
         data = bottle.request.json
         if not data or "key" not in data:
@@ -253,23 +274,28 @@ def create_app(
 
         provider = data.get("provider", "")
         _require_valid_provider(provider)
-        key_name = f"{provider}_key"
-        api_key = data.get("key") or get_api_key(key_name)
+        pinfo = PROVIDERS.get(provider, {})
 
-        if not api_key:
-            return {"status": "error", "message": "No API key provided"}
-
-        err = validate_api_key_format(key_name, api_key)
-        if err:
-            return {"status": "error", "message": err}
+        # Keyless providers skip key resolution
+        if pinfo.get("requires_key", True):
+            key_name = f"{provider}_key"
+            api_key = data.get("key") or get_api_key(key_name)
+            if not api_key:
+                return {"status": "error", "message": "No API key provided"}
+            err = validate_api_key_format(key_name, api_key)
+            if err:
+                return {"status": "error", "message": err}
+        else:
+            api_key = ""
 
         try:
             from talkie_modules.api_client import test_connection as _test
             _test(provider, api_key)
-            return {"status": "ok", "message": f"{provider}: connected"}
+            return {"status": "ok", "message": f"{pinfo.get('label', provider)}: connected"}
         except Exception as e:
             logger.warning("Connection test failed for %s: %s", provider, e)
-            return {"status": "error", "message": _safe_error_message(e)}
+            msg = str(e) if isinstance(e, (TalkieConfigError,)) else _safe_error_message(e)
+            return {"status": "error", "message": msg}
 
     # ---- Hotkey Recording ----
     # Uses polling: POST starts recording, GET checks result
@@ -320,17 +346,7 @@ def create_app(
     @app.route("/api/providers", method="GET")
     def get_providers():
         """Return provider metadata for dynamic frontend rendering."""
-        result = []
-        for pid, pinfo in PROVIDERS.items():
-            result.append({
-                "id": pid,
-                "label": pinfo["label"],
-                "placeholder": pinfo["key_prefix"] + "...",
-                "url": pinfo["key_url"],
-                "has_stt": pinfo["stt_models"] is not None,
-                "has_llm": pinfo["llm_models"] is not None,
-            })
-        return {"providers": result}
+        return {"providers": _provider_metadata_list()}
 
     # ---- Profiles ----
 
@@ -663,6 +679,88 @@ def create_app(
             on_config_saved()
 
         return {"status": "ok", "profile": profile}
+
+    # ---- Local Whisper ----
+
+    _whisper_dl_state = {
+        "downloading": False, "target": "", "progress": 0, "error": None,
+    }
+    _whisper_dl_lock = threading.Lock()
+
+    @app.route("/api/local/whisper/status", method="GET")
+    def whisper_status():
+        from talkie_modules.local_whisper import (
+            is_binary_available, get_downloaded_models, MODEL_SIZES_MB,
+        )
+        with _whisper_dl_lock:
+            dl = dict(_whisper_dl_state)
+        return {
+            "binary_installed": is_binary_available(),
+            "downloaded_models": get_downloaded_models(),
+            "model_sizes_mb": MODEL_SIZES_MB,
+            "download": dl,
+        }
+
+    def _start_whisper_download(target_label, download_fn):
+        """Shared helper: start a background whisper download with progress tracking."""
+        with _whisper_dl_lock:
+            if _whisper_dl_state["downloading"]:
+                return {"status": "already_downloading"}
+            _whisper_dl_state.update(
+                downloading=True, target=target_label, progress=0, error=None,
+            )
+
+        def _do_download():
+            try:
+                def _progress(downloaded, total):
+                    pct = round((downloaded / total * 100) if total else 0, 1)
+                    with _whisper_dl_lock:
+                        _whisper_dl_state["progress"] = pct
+                download_fn(_progress)
+                with _whisper_dl_lock:
+                    _whisper_dl_state["downloading"] = False
+                    _whisper_dl_state["progress"] = 100
+            except Exception as exc:
+                logger.error("Whisper download failed (%s): %s", target_label, exc)
+                with _whisper_dl_lock:
+                    _whisper_dl_state["downloading"] = False
+                    _whisper_dl_state["error"] = str(exc)
+
+        threading.Thread(target=_do_download, daemon=True).start()
+        return {"status": "downloading"}
+
+    @app.route("/api/local/whisper/download-binary", method="POST")
+    def whisper_download_binary():
+        from talkie_modules.local_whisper import download_binary, is_binary_available
+        if is_binary_available():
+            return {"status": "ok", "message": "Already installed"}
+        return _start_whisper_download("binary", download_binary)
+
+    @app.route("/api/local/whisper/download-model", method="POST")
+    def whisper_download_model():
+        from talkie_modules.local_whisper import download_model
+        data = bottle.request.json
+        if not data or "model" not in data:
+            bottle.abort(400, "Missing 'model' field")
+        model_name = data["model"]
+        return _start_whisper_download(
+            model_name, lambda cb: download_model(model_name, cb),
+        )
+
+    @app.route("/api/local/whisper/download", method="GET")
+    def whisper_download_poll():
+        with _whisper_dl_lock:
+            return dict(_whisper_dl_state)
+
+    # ---- Ollama ----
+
+    @app.route("/api/local/ollama/models", method="GET")
+    def ollama_models():
+        from talkie_modules.ollama_utils import list_models
+        models = list_models()
+        if models is None:
+            return {"status": "not_running", "models": []}
+        return {"status": "ok", "models": models}
 
     return app
 

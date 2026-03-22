@@ -7,6 +7,7 @@ derive their constants from this registry.
 PROVIDERS = {
     "openai": {
         "label": "OpenAI",
+        "requires_key": True,
         "key_name": "openai_key",
         "key_env": "OPENAI_API_KEY",
         "key_prefix": "sk-",
@@ -20,6 +21,7 @@ PROVIDERS = {
     },
     "groq": {
         "label": "Groq",
+        "requires_key": True,
         "key_name": "groq_key",
         "key_env": "GROQ_API_KEY",
         "key_prefix": "gsk_",
@@ -33,6 +35,7 @@ PROVIDERS = {
     },
     "anthropic": {
         "label": "Anthropic",
+        "requires_key": True,
         "key_name": "anthropic_key",
         "key_env": "ANTHROPIC_API_KEY",
         "key_prefix": "sk-ant-",
@@ -43,11 +46,32 @@ PROVIDERS = {
         "default_llm": "claude-sonnet-4-20250514",
         "sdk": "anthropic",
     },
+    "local_whisper": {
+        "label": "Local (Whisper)",
+        "requires_key": False,
+        "stt_models": ["tiny", "base", "small", "medium", "large-v3"],
+        "llm_models": None,
+        "default_stt": "small",
+        "sdk": "local_whisper",
+    },
+    "ollama": {
+        "label": "Ollama (Local)",
+        "requires_key": False,
+        "stt_models": None,
+        "llm_models": ["llama3.2", "mistral", "gemma2"],
+        "default_llm": "llama3.2",
+        "sdk": "openai",
+        "base_url": "http://localhost:11434/v1",
+    },
 }
 
 # Derived constants — replace all scattered copies
-KEY_NAMES = tuple(p["key_name"] for p in PROVIDERS.values())
+# Only keyed providers participate in key-related lookups
+_KEYED = {k: v for k, v in PROVIDERS.items() if v.get("requires_key", True)}
+KEY_NAMES = tuple(v["key_name"] for v in _KEYED.values())
+KEY_PREFIXES = {v["key_name"]: v["key_prefix"] for v in _KEYED.values()}
+PROVIDER_KEY_MAP = {k: v["key_name"] for k, v in _KEYED.items()}
+
+# All providers participate in model lookups
 STT_MODELS = {k: v["stt_models"] for k, v in PROVIDERS.items() if v.get("stt_models")}
 LLM_MODELS = {k: v["llm_models"] for k, v in PROVIDERS.items() if v.get("llm_models")}
-KEY_PREFIXES = {v["key_name"]: v["key_prefix"] for v in PROVIDERS.values()}
-PROVIDER_KEY_MAP = {k: v["key_name"] for k, v in PROVIDERS.items()}

@@ -20,8 +20,12 @@ _TIMEOUT = 30  # seconds
 _client_cache: dict[tuple[str, str], object] = {}
 
 
-def _resolve_key(config: dict[str, Any], config_key: str, env_var: str) -> str:
-    """Get API key from config, falling back to env var."""
+def _resolve_key(config: dict[str, Any], provider_info: dict[str, Any]) -> str:
+    """Get API key from config, falling back to env var. Skips keyless providers."""
+    if not provider_info.get("requires_key", True):
+        return ""
+    config_key = provider_info["key_name"]
+    env_var = provider_info["key_env"]
     key = config.get(config_key, "") or os.environ.get(env_var, "")
     if not key:
         raise TalkieConfigError(f"API key missing: set '{config_key}' in settings or {env_var} env var")
@@ -47,6 +51,12 @@ def _get_anthropic_client(api_key: str) -> "anthropic.Anthropic":
     return anthropic.Anthropic(api_key=api_key, timeout=_TIMEOUT)
 
 
+def _get_ollama_client() -> "openai.OpenAI":
+    import openai
+    base_url = PROVIDERS["ollama"]["base_url"]
+    return openai.OpenAI(api_key="ollama", base_url=base_url, timeout=_TIMEOUT)
+
+
 def _get_client(provider: str, api_key: str):
     """Get or create the appropriate SDK client for a provider."""
     cache_key = (provider, api_key)
@@ -60,6 +70,8 @@ def _get_client(provider: str, api_key: str):
         client = _get_groq_client(api_key)
     elif provider == "anthropic":
         client = _get_anthropic_client(api_key)
+    elif provider == "ollama":
+        client = _get_ollama_client()
     else:
         raise TalkieConfigError(f"No client factory for provider: {provider}")
 
@@ -80,11 +92,17 @@ def transcribe_audio(audio_data: npt.NDArray, config: dict[str, Any]) -> str:
     if provider_info["stt_models"] is None:
         raise TalkieConfigError(f"{provider_info['label']} does not support STT")
 
-    # Resolve key, client, and model from registry
-    api_key = _resolve_key(config, provider_info["key_name"], provider_info["key_env"])
-    client = _get_client(provider, api_key)
     models = config.get("models", {})
     model = models.get(f"{provider}_stt", provider_info["default_stt"])
+
+    # Local whisper — bypass SDK, use subprocess
+    if provider_info["sdk"] == "local_whisper":
+        from talkie_modules.local_whisper import transcribe as local_transcribe
+        return local_transcribe(audio_data, model)
+
+    # Cloud providers — resolve key, build client, send WAV
+    api_key = _resolve_key(config, provider_info)
+    client = _get_client(provider, api_key)
 
     # Convert numpy audio to WAV bytes
     buffer = io.BytesIO()
@@ -147,7 +165,7 @@ def process_text_llm(
     user_prompt = "\n\n".join(parts)
 
     # Resolve key, client, and model from registry
-    api_key = _resolve_key(config, provider_info["key_name"], provider_info["key_env"])
+    api_key = _resolve_key(config, provider_info)
     client = _get_client(provider, api_key)
     models = config.get("models", {})
     model = models.get(f"{provider}_llm", provider_info["default_llm"])
@@ -193,18 +211,34 @@ def process_text_llm(
 # Connection test
 # ---------------------------------------------------------------------------
 
-def test_connection(provider: str, api_key: str) -> None:
+def test_connection(provider: str, api_key: str = "") -> None:
     """Test an API connection. Raises on failure."""
     provider_info = PROVIDERS.get(provider)
     if not provider_info:
         raise TalkieConfigError(f"Unknown provider: {provider}")
+
+    if provider_info["sdk"] == "local_whisper":
+        from talkie_modules.local_whisper import is_binary_available, get_downloaded_models
+        if not is_binary_available():
+            raise TalkieConfigError("Whisper engine not downloaded")
+        if not get_downloaded_models():
+            raise TalkieConfigError("No whisper models downloaded")
+        return
+
+    if provider == "ollama":
+        from talkie_modules.ollama_utils import is_running
+        if not is_running():
+            raise TalkieConfigError("Ollama is not running at localhost:11434")
+        # Also verify the client can reach the OpenAI-compat endpoint
+        client = _get_client(provider, api_key)
+        client.models.list()
+        return
 
     if provider_info["sdk"] == "openai":
         client = _get_client(provider, api_key)
         client.models.list()
     elif provider_info["sdk"] == "anthropic":
         client = _get_client(provider, api_key)
-        # Use the last (cheapest) model for the connection test
         test_model = provider_info["llm_models"][-1]
         client.messages.create(
             model=test_model,

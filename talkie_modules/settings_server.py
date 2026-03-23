@@ -171,6 +171,7 @@ def create_app(
                     "masked": "",
                 }
         config["_version"] = get_version() if get_version else "unknown"
+        config["_is_frozen"] = getattr(sys, "frozen", False)
 
         from talkie_modules.audio_io import TONE_PRESETS
         config["_tone_presets"] = {
@@ -216,6 +217,9 @@ def create_app(
                 if field in data:
                     config[field] = data[field]
 
+            if "start_on_boot" in data:
+                config["start_on_boot"] = bool(data["start_on_boot"])
+
             # Update model selections
             if "models" in data:
                 if "models" not in config:
@@ -223,6 +227,10 @@ def create_app(
                 config["models"].update(data["models"])
 
             save_config(config)
+
+            if "start_on_boot" in data:
+                from talkie_modules.autostart import sync_autostart
+                sync_autostart(config.get("start_on_boot", False))
 
             if on_config_saved:
                 on_config_saved()

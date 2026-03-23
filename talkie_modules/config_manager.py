@@ -62,6 +62,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "temperature": 0,
     "notification_tone": "pop",
     "log_level": "INFO",
+    "start_on_boot": False,
     "profiles": [],
 }
 

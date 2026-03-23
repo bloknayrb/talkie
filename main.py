@@ -3,6 +3,7 @@
 import ctypes
 import logging
 import os
+import sys
 import threading
 import time
 from typing import Optional
@@ -10,7 +11,7 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from talkie_modules.logger import setup_logging, get_logger
-from talkie_modules.config_manager import load_config, get_missing_keys
+from talkie_modules.config_manager import load_config, save_config, get_missing_keys
 from talkie_modules.audio_io import ensure_assets, set_tone_preset, start_recording, stop_recording, play_stop_chime, compute_rms
 from talkie_modules.hotkey_manager import HotkeyManager
 from talkie_modules.context_capture import get_context, get_target_window
@@ -133,6 +134,9 @@ class TalkieApp:
 
         menu = pystray.Menu(
             pystray.MenuItem("Settings", self.show_settings),
+            pystray.MenuItem("Start on Boot", self._toggle_start_on_boot,
+                             checked=lambda item: self.config.get("start_on_boot", False),
+                             visible=getattr(sys, "frozen", False)),
             pystray.MenuItem("Open Log", self._open_log),
             pystray.MenuItem("Recent", recent_submenu),
             pystray.MenuItem("Quit", self.quit_app),
@@ -148,6 +152,16 @@ class TalkieApp:
         time.sleep(0.15)
         pyperclip.copy(text)
         kb.send("ctrl+v")
+
+    def _toggle_start_on_boot(self, icon, item):
+        """Toggle autostart from the tray menu."""
+        from talkie_modules.autostart import sync_autostart
+        new_val = not self.config.get("start_on_boot", False)
+        if not sync_autostart(new_val):
+            return
+        self.config["start_on_boot"] = new_val
+        save_config(self.config)
+        self._rebuild_tray_menu()
 
     def _open_log(self, icon: object = None, item: object = None) -> None:
         """Open the log file with the system default handler."""
@@ -281,6 +295,12 @@ class TalkieApp:
         # 0. Clean up stale update files from a previous update
         from talkie_modules.updater import cleanup_update_files
         cleanup_update_files(BASE_DIR)
+
+        # 0b. Reconcile autostart registry with current exe path
+        if self.config.get("start_on_boot"):
+            from talkie_modules.autostart import is_autostart_enabled, enable_autostart
+            if not is_autostart_enabled():
+                enable_autostart()
 
         # 1. Start hotkey listener
         self.hotkey_manager = HotkeyManager(

@@ -1417,8 +1417,14 @@ document.getElementById('check-update-btn').addEventListener('click', async () =
     }
 
     if (!result.available) {
-        msgEl.textContent = `You're on the latest version (v${result.current_version || result.latest_version || ''}).`;
-        msgEl.style.color = 'var(--success)';
+        if (result.error) {
+            msgEl.textContent = result.error;
+            msgEl.style.color = 'var(--warning)';
+        } else {
+            const ver = result.current_version || result.latest_version || config._version || '';
+            msgEl.textContent = ver ? `You're on the latest version (v${ver}).` : 'You\'re on the latest version.';
+            msgEl.style.color = 'var(--success)';
+        }
         return;
     }
 

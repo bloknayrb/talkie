@@ -213,10 +213,12 @@ def create_app(
 
             # Passthrough fields (no meaningful server-side constraints)
             for field in ("hotkey", "custom_vocabulary", "snippets",
-                          "system_prompt", "log_level", "notification_tone",
-                          "start_on_boot"):
+                          "system_prompt", "log_level", "notification_tone"):
                 if field in data:
                     config[field] = data[field]
+
+            if "start_on_boot" in data:
+                config["start_on_boot"] = bool(data["start_on_boot"])
 
             # Update model selections
             if "models" in data:

@@ -3,6 +3,7 @@
 import ctypes
 import logging
 import os
+import sys
 import threading
 import time
 from typing import Optional
@@ -134,7 +135,8 @@ class TalkieApp:
         menu = pystray.Menu(
             pystray.MenuItem("Settings", self.show_settings),
             pystray.MenuItem("Start on Boot", self._toggle_start_on_boot,
-                             checked=lambda item: self.config.get("start_on_boot", False)),
+                             checked=lambda item: self.config.get("start_on_boot", False),
+                             visible=getattr(sys, "frozen", False)),
             pystray.MenuItem("Open Log", self._open_log),
             pystray.MenuItem("Recent", recent_submenu),
             pystray.MenuItem("Quit", self.quit_app),

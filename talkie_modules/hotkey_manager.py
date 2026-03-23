@@ -75,7 +75,7 @@ class HotkeyManager:
                 threading.Thread(target=self.on_press, daemon=True).start()
             # Suppress trigger key while modifiers held to prevent
             # OS side effects (e.g. Windows key opening Start Menu)
-            if all_mods_pressed:
+            if all_mods_pressed or self.is_held:
                 return False
         elif event.event_type == keyboard.KEY_UP:
             if self.is_held:

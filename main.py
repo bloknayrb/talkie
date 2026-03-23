@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 from talkie_modules.logger import setup_logging, get_logger
 from talkie_modules.config_manager import load_config, get_missing_keys
-from talkie_modules.audio_io import ensure_assets, start_recording, stop_recording, play_stop_chime, compute_rms
+from talkie_modules.audio_io import ensure_assets, set_tone_preset, start_recording, stop_recording, play_stop_chime, compute_rms
 from talkie_modules.hotkey_manager import HotkeyManager
 from talkie_modules.context_capture import get_context, get_target_window
 from talkie_modules.profile_matcher import resolve_profile, apply_profile
@@ -55,7 +55,7 @@ class TalkieApp:
         level = getattr(logging, self.config.get("log_level", "INFO").upper(), logging.INFO)
         setup_logging(level)
 
-        ensure_assets()
+        ensure_assets(self.config.get("notification_tone", "pop"))
         self.hotkey_manager: Optional[HotkeyManager] = None
         self.tray_icon = None
         self.state: StateMachine = StateMachine()
@@ -97,6 +97,7 @@ class TalkieApp:
         )
         self.hotkey_manager.start()
         self._update_tray_tooltip()
+        set_tone_preset(self.config.get("notification_tone", "pop"))
         logger.info("Config reloaded, hotkey refreshed: %s", self.config.get("hotkey"))
 
     def create_tray_icon(self) -> None:
@@ -105,12 +106,48 @@ class TalkieApp:
         image = get_tray_image(64)
 
         hotkey = self.config.get("hotkey", "ctrl+win")
+        self.tray_icon = pystray.Icon("Talkie", image, f"Talkie ({hotkey})")
+        self._rebuild_tray_menu()
+
+    def _rebuild_tray_menu(self) -> None:
+        """Rebuild tray menu with current Recent history items."""
+        import pystray
+        from talkie_modules.history import get_entries
+
+        entries = get_entries(limit=5)
+        if entries:
+            recent_items = []
+            for entry in entries:
+                text_preview = entry["text"][:40] + ("..." if len(entry["text"]) > 40 else "")
+                app_label = entry.get("target_app", "")
+                label = f"{app_label}: {text_preview}" if app_label else text_preview
+                entry_text = entry["text"]
+                recent_items.append(
+                    pystray.MenuItem(label, lambda _, t=entry_text: self._reinject_from_tray(t))
+                )
+            recent_submenu = pystray.Menu(*recent_items)
+        else:
+            recent_submenu = pystray.Menu(
+                pystray.MenuItem("No recent dictations", None, enabled=False),
+            )
+
         menu = pystray.Menu(
             pystray.MenuItem("Settings", self.show_settings),
             pystray.MenuItem("Open Log", self._open_log),
+            pystray.MenuItem("Recent", recent_submenu),
             pystray.MenuItem("Quit", self.quit_app),
         )
-        self.tray_icon = pystray.Icon("Talkie", image, f"Talkie ({hotkey})", menu)
+        if self.tray_icon:
+            self.tray_icon.menu = menu
+
+    def _reinject_from_tray(self, text: str) -> None:
+        """Re-inject text from a Recent tray menu item into the foreground window."""
+        import keyboard as kb
+        import pyperclip
+        # Brief delay to let the OS restore the previous foreground window after menu dismisses
+        time.sleep(0.15)
+        pyperclip.copy(text)
+        kb.send("ctrl+v")
 
     def _open_log(self, icon: object = None, item: object = None) -> None:
         """Open the log file with the system default handler."""
@@ -207,6 +244,9 @@ class TalkieApp:
                 )
                 inject_text(processed_text, target_hwnd, process_name=pending_process)
                 self._last_injected = processed_text
+                from talkie_modules.history import add_entry
+                add_entry(processed_text, pending_process, pending_title, elapsed)
+                self._rebuild_tray_menu()
             except Exception as e:
                 is_expected = isinstance(e, TalkieError)
                 logger.error(

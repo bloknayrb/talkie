@@ -29,3 +29,4 @@ DATA_DIR: Final[str] = os.path.join(
 )
 MODELS_DIR: Final[str] = os.path.join(DATA_DIR, 'models')
 BIN_DIR: Final[str] = os.path.join(DATA_DIR, 'bin')
+TONES_DIR: Final[str] = os.path.join(DATA_DIR, 'tones')

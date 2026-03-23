@@ -37,6 +37,9 @@
                 <li class="nav-item" data-section="profiles">
                     <span class="nav-icon">&#128100;</span> Profiles
                 </li>
+                <li class="nav-item" data-section="history">
+                    <span class="nav-icon">&#128340;</span> History
+                </li>
                 <li class="nav-item" data-section="about">
                     <span class="nav-icon">&#8505;</span> About
                 </li>
@@ -176,6 +179,16 @@
                 </div>
                 <button class="btn btn-primary" id="save-hotkey">Save Hotkey Settings</button>
                 <span class="save-status" id="hotkey-status"></span>
+
+                <div class="form-group" id="tone-section">
+                    <h3>Notification Sounds</h3>
+                    <div class="form-row">
+                        <label for="notification-tone">Tone:</label>
+                        <select id="notification-tone"></select>
+                        <button class="btn btn-sm" id="preview-tone-btn">Preview</button>
+                    </div>
+                    <span id="tone-preview-status" class="save-status"></span>
+                </div>
             </section>
 
             <!-- Snippets -->
@@ -331,6 +344,18 @@
             </section>
 
             <!-- About -->
+            <!-- History -->
+            <section id="history" class="section">
+                <h2>Dictation History</h2>
+                <div id="history-empty" class="empty-state" style="display:none;">
+                    <p>No dictation history yet. Hold your hotkey and speak to get started.</p>
+                </div>
+                <div id="history-list"></div>
+                <div id="history-actions" style="display:none;">
+                    <button class="btn btn-sm btn-danger" id="clear-history">Clear History</button>
+                </div>
+            </section>
+
             <section id="about" class="section">
                 <h2>About Talkie</h2>
                 <div class="about-info">

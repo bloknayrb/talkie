@@ -118,15 +118,7 @@ function populateToneDropdown() {
     select.value = config.notification_tone || 'pop';
 }
 
-// Save tone with the rest of hotkey settings
-const origSaveHotkey = document.getElementById('save-hotkey');
-if (origSaveHotkey) {
-    const origHandler = origSaveHotkey.onclick;
-    // The hotkey save already sends config — we hook into it by adding notification_tone
-    // to the config payload. Let's find the existing save handler and extend it.
-}
-
-// Simpler approach: save tone whenever the dropdown changes
+// Save tone whenever the dropdown changes
 document.getElementById('notification-tone')?.addEventListener('change', async (e) => {
     const tone = e.target.value;
     await api('POST', '/api/config', { notification_tone: tone });

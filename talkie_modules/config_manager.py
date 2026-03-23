@@ -60,6 +60,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     ),
     "models": dict(_default_models),
     "temperature": 0,
+    "notification_tone": "pop",
     "log_level": "INFO",
     "profiles": [],
 }

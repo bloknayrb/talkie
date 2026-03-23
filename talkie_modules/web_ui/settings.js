@@ -7,6 +7,154 @@ let hotkeyPollTimer = null;
 
 // ---- Poll Timer Management ----
 
+// ---- Dictation History ----
+
+async function loadHistory() {
+    const data = await api('GET', '/api/history');
+    const entries = data.entries || [];
+    const list = document.getElementById('history-list');
+    const empty = document.getElementById('history-empty');
+    const actions = document.getElementById('history-actions');
+    if (!list) return;
+
+    list.innerHTML = '';
+
+    if (entries.length === 0) {
+        if (empty) empty.style.display = 'block';
+        if (actions) actions.style.display = 'none';
+        return;
+    }
+
+    if (empty) empty.style.display = 'none';
+    if (actions) actions.style.display = 'block';
+
+    for (const entry of entries) {
+        const card = document.createElement('div');
+        card.className = 'history-card';
+        card.dataset.id = entry.id;
+
+        const ts = new Date(entry.timestamp);
+        const now = new Date();
+        const isToday = ts.toDateString() === now.toDateString();
+        const timeStr = isToday
+            ? ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : ts.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ', ' +
+              ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        const appBadge = entry.target_app
+            ? `<span class="history-app-badge">${escapeHtml(entry.target_app)}</span>`
+            : '';
+
+        card.innerHTML =
+            `<div class="history-card-header">` +
+            `<span class="history-time">${timeStr}</span>${appBadge}` +
+            `<span class="history-chevron">&#9660;</span>` +
+            `</div>` +
+            `<div class="history-card-text">${escapeHtml(entry.text)}</div>` +
+            `<div class="history-card-actions">` +
+            `<button class="btn btn-sm history-copy-btn">Copy</button>` +
+            `<button class="btn btn-sm btn-danger history-delete-btn">Delete</button>` +
+            `</div>`;
+
+        // Expand/collapse on header click
+        card.querySelector('.history-card-header').addEventListener('click', () => {
+            card.classList.toggle('history-card-expanded');
+        });
+
+        // Copy
+        card.querySelector('.history-copy-btn').addEventListener('click', async (e) => {
+            e.stopPropagation();
+            try {
+                await navigator.clipboard.writeText(entry.text);
+                e.target.textContent = 'Copied';
+                setTimeout(() => e.target.textContent = 'Copy', 1500);
+            } catch (err) {
+                e.target.textContent = 'Failed';
+                setTimeout(() => e.target.textContent = 'Copy', 1500);
+            }
+        });
+
+        // Delete
+        card.querySelector('.history-delete-btn').addEventListener('click', async (e) => {
+            e.stopPropagation();
+            await api('DELETE', `/api/history/${entry.id}`);
+            card.remove();
+            // Check if list is now empty
+            if (list.children.length === 0) {
+                if (empty) empty.style.display = 'block';
+                if (actions) actions.style.display = 'none';
+            }
+        });
+
+        list.appendChild(card);
+    }
+}
+
+function escapeHtml(str) {
+    const el = document.createElement('span');
+    el.textContent = str;
+    return el.innerHTML;
+}
+
+document.getElementById('clear-history')?.addEventListener('click', async () => {
+    if (!confirm('Clear all dictation history? This cannot be undone.')) return;
+    await api('DELETE', '/api/history');
+    loadHistory();
+});
+
+// ---- Tone Selector ----
+
+function populateToneDropdown() {
+    const select = document.getElementById('notification-tone');
+    if (!select) return;
+    select.innerHTML = '';
+    const presets = config._tone_presets || {};
+    for (const [id, info] of Object.entries(presets)) {
+        const o = document.createElement('option');
+        o.value = id;
+        o.textContent = `${info.label} — ${info.description}`;
+        select.appendChild(o);
+    }
+    select.value = config.notification_tone || 'pop';
+}
+
+// Save tone with the rest of hotkey settings
+const origSaveHotkey = document.getElementById('save-hotkey');
+if (origSaveHotkey) {
+    const origHandler = origSaveHotkey.onclick;
+    // The hotkey save already sends config — we hook into it by adding notification_tone
+    // to the config payload. Let's find the existing save handler and extend it.
+}
+
+// Simpler approach: save tone whenever the dropdown changes
+document.getElementById('notification-tone')?.addEventListener('change', async (e) => {
+    const tone = e.target.value;
+    await api('POST', '/api/config', { notification_tone: tone });
+});
+
+// Preview tone
+let previewActive = false;
+document.getElementById('preview-tone-btn')?.addEventListener('click', async () => {
+    if (previewActive) return;
+    const btn = document.getElementById('preview-tone-btn');
+    const status = document.getElementById('tone-preview-status');
+    const tone = document.getElementById('notification-tone')?.value || 'pop';
+
+    previewActive = true;
+    btn.disabled = true;
+    if (status) { status.textContent = 'Playing...'; status.className = 'save-status'; }
+
+    try {
+        await api('POST', '/api/audio/preview-tone', { tone });
+        if (status) { status.textContent = ''; }
+    } catch (err) {
+        if (status) { status.textContent = 'Preview failed'; status.className = 'save-status error'; }
+    } finally {
+        previewActive = false;
+        btn.disabled = false;
+    }
+});
+
 function clearAllPollTimers() {
     if (hotkeyPollTimer) { clearInterval(hotkeyPollTimer); hotkeyPollTimer = null; }
     if (updatePollTimer) { clearInterval(updatePollTimer); updatePollTimer = null; }
@@ -115,6 +263,12 @@ function populateUI() {
 
     // Profiles
     loadProfiles();
+
+    // Tone selector
+    populateToneDropdown();
+
+    // History
+    loadHistory();
 
     // Quick Start badges
     updateQuickStartBadges();

@@ -13,7 +13,7 @@ def app(monkeypatch):
         "log_level": "DEBUG",
     })
     monkeypatch.setattr("main.setup_logging", lambda level: None)
-    monkeypatch.setattr("main.ensure_assets", lambda: None)
+    monkeypatch.setattr("main.ensure_assets", lambda *a, **kw: None)
     return TalkieApp()
 
 

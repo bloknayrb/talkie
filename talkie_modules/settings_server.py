@@ -8,6 +8,7 @@ import copy
 import os
 import sys
 import threading
+import time
 import uuid
 from typing import Any, Optional
 
@@ -171,6 +172,12 @@ def create_app(
                 }
         config["_version"] = get_version() if get_version else "unknown"
 
+        from talkie_modules.audio_io import TONE_PRESETS
+        config["_tone_presets"] = {
+            k: {"label": v["label"], "description": v["description"]}
+            for k, v in TONE_PRESETS.items()
+        }
+
         return config
 
     @app.route("/api/config", method="POST")
@@ -205,7 +212,7 @@ def create_app(
 
             # Passthrough fields (no meaningful server-side constraints)
             for field in ("hotkey", "custom_vocabulary", "snippets",
-                          "system_prompt", "log_level"):
+                          "system_prompt", "log_level", "notification_tone"):
                 if field in data:
                     config[field] = data[field]
 
@@ -679,6 +686,68 @@ def create_app(
             on_config_saved()
 
         return {"status": "ok", "profile": profile}
+
+    # ---- History ----
+
+    @app.route("/api/history", method="GET")
+    def get_history():
+        from talkie_modules.history import get_entries
+        limit = bottle.request.params.get("limit")
+        limit = int(limit) if limit and limit.isdigit() else None
+        return {"entries": get_entries(limit)}
+
+    @app.route("/api/history", method="DELETE")
+    def clear_history():
+        from talkie_modules.history import clear
+        clear()
+        return {"status": "ok"}
+
+    @app.route("/api/history/<entry_id>", method="DELETE")
+    def delete_history_entry(entry_id):
+        from talkie_modules.history import delete_entry
+        if delete_entry(entry_id):
+            return {"status": "ok"}
+        bottle.abort(404, "Entry not found")
+
+    # ---- Audio / Tone Preview ----
+
+    @app.route("/api/audio/preview-tone", method="POST")
+    def preview_tone():
+        import tempfile
+        import sounddevice as sd
+        import soundfile as sf_lib
+        from talkie_modules.audio_io import TONE_PRESETS, _generate_tone
+        data = bottle.request.json
+        if not data or "tone" not in data:
+            bottle.abort(400, "Missing 'tone' field")
+        tone = data["tone"]
+        if tone not in TONE_PRESETS:
+            bottle.abort(400, f"Unknown tone preset: {tone}")
+
+        preset = TONE_PRESETS[tone]
+        if preset["start"] is None:
+            return {"status": "ok"}
+
+        # Generate temp WAVs, play them, clean up — no preset state mutation
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            start_path = os.path.join(tmp_dir, "start.wav")
+            stop_path = os.path.join(tmp_dir, "stop.wav")
+            if preset["start"]:
+                _generate_tone(start_path, preset["start"])
+                data_s, fs = sf_lib.read(start_path)
+                sd.play(data_s, fs)
+                sd.wait()
+            time.sleep(1.0)
+            if preset["stop"]:
+                _generate_tone(stop_path, preset["stop"])
+                data_t, fs = sf_lib.read(stop_path)
+                sd.play(data_t, fs)
+                sd.wait()
+        finally:
+            import shutil
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        return {"status": "ok"}
 
     # ---- Local Whisper ----
 

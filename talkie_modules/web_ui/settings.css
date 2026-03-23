@@ -791,3 +791,98 @@ input[type="range"] {
     border-radius: 3px;
     font-size: 13px;
 }
+
+/* Dictation History */
+
+.history-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+}
+
+.history-card:hover {
+    border-color: var(--accent);
+}
+
+.history-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.history-time {
+    color: var(--text-muted);
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.history-app-badge {
+    background: var(--bg-tertiary, #333);
+    color: var(--text-muted);
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 3px;
+}
+
+.history-chevron {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: 10px;
+    transition: transform 0.15s;
+}
+
+.history-card-expanded .history-chevron {
+    transform: rotate(180deg);
+}
+
+.history-card-text {
+    margin-top: 6px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.history-card-expanded .history-card-text {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+}
+
+.history-card-actions {
+    display: none;
+    margin-top: 8px;
+    gap: 6px;
+}
+
+.history-card-expanded .history-card-actions {
+    display: flex;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-muted);
+}
+
+.empty-state p {
+    font-size: 14px;
+}
+
+/* Tone Section */
+
+#tone-section h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-top: 20px;
+    margin-bottom: 10px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text-primary);
+}

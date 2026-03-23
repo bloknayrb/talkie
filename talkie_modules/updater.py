@@ -111,7 +111,16 @@ def download_update(url: str, dest_path: str, expected_size: int,
             pass
         # Strip Mark of the Web before rename so a crash can't leave a live
         # exe with Zone.Identifier intact (best-effort — ADS may not exist)
-        ctypes.windll.kernel32.DeleteFileW(tmp_path + ":Zone.Identifier")
+        _kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        _kernel32.DeleteFileW.argtypes = [ctypes.c_wchar_p]
+        _kernel32.DeleteFileW.restype = ctypes.c_int
+        ads_path = tmp_path + ":Zone.Identifier"
+        if not _kernel32.DeleteFileW(ads_path):
+            err = ctypes.get_last_error()
+            if err != 2:  # ERROR_FILE_NOT_FOUND — ADS may not exist
+                logger.warning(
+                    "Failed to strip Zone.Identifier from %s (win32 error %d); "
+                    "SmartScreen may flag the updated exe", tmp_path, err)
 
         os.rename(tmp_path, dest_path)
 
@@ -136,7 +145,7 @@ def apply_update(current_exe: str, new_exe: str) -> None:
     log_path = os.path.join(os.path.dirname(current_exe), "_talkie_update.log")
 
     script = f"""@echo off
-set LOGFILE={log_path}
+set "LOGFILE={log_path}"
 echo [%date% %time%] Update script started for PID {pid} >> "%LOGFILE%"
 
 :: Wait for PID {pid} to exit (up to ~20 seconds)
@@ -168,6 +177,9 @@ move /Y "{new_exe}" "{current_exe}"
 if %ERRORLEVEL% NEQ 0 (
     echo [%date% %time%] Failed to move new exe, rolling back >> "%LOGFILE%"
     move /Y "{old_backup}" "{current_exe}"
+    if %ERRORLEVEL% NEQ 0 (
+        echo [%date% %time%] CRITICAL: Rollback also failed! Backup at: {old_backup} >> "%LOGFILE%"
+    )
     goto fail
 )
 
@@ -191,17 +203,21 @@ exit /b 0
 echo [%date% %time%] Update FAILED >> "%LOGFILE%"
 exit /b 1
 """
-    with open(script_path, "w") as f:
-        f.write(script)
+    try:
+        with open(script_path, "w") as f:
+            f.write(script)
 
-    # Launch hidden and detached so it survives our exit
-    subprocess.Popen(
-        ["cmd.exe", "/c", script_path],
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+        # Launch hidden and detached so it survives our exit
+        subprocess.Popen(
+            ["cmd.exe", "/c", script_path],
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as exc:
+        logger.error("Failed to launch update script: %s", exc)
+        raise RuntimeError(f"Could not start update process: {exc}") from exc
 
 
 def cleanup_update_files(base_dir: str) -> None:

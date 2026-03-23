@@ -124,6 +124,11 @@ document.getElementById('notification-tone')?.addEventListener('change', async (
     await api('POST', '/api/config', { notification_tone: tone });
 });
 
+// Save start-on-boot whenever the checkbox changes
+document.getElementById('start-on-boot')?.addEventListener('change', async (e) => {
+    await api('POST', '/api/config', { start_on_boot: e.target.checked });
+});
+
 // Preview tone
 let previewActive = false;
 document.getElementById('preview-tone-btn')?.addEventListener('click', async () => {
@@ -267,6 +272,16 @@ function populateUI() {
 
     // About (version bundled in config response)
     document.getElementById('about-version').textContent = config._version || '-';
+
+    // Start on boot
+    const bootCheckbox = document.getElementById('start-on-boot');
+    if (bootCheckbox) {
+        bootCheckbox.checked = !!config.start_on_boot;
+        if (!config._is_frozen) {
+            bootCheckbox.disabled = true;
+            document.getElementById('start-on-boot-dev-hint').style.display = 'block';
+        }
+    }
 
     // Local provider panels (whisper setup, ollama status)
     updateLocalProviderUI();

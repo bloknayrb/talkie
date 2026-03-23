@@ -5,6 +5,7 @@ and spawns a .cmd script to swap the running binary on Windows.
 Uses only stdlib — no additional dependencies.
 """
 
+import ctypes
 import json
 import logging
 import os
@@ -108,6 +109,19 @@ def download_update(url: str, dest_path: str, expected_size: int,
             os.remove(dest_path)
         except FileNotFoundError:
             pass
+        # Strip Mark of the Web before rename so a crash can't leave a live
+        # exe with Zone.Identifier intact (best-effort — ADS may not exist)
+        _kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        _kernel32.DeleteFileW.argtypes = [ctypes.c_wchar_p]
+        _kernel32.DeleteFileW.restype = ctypes.c_int
+        ads_path = tmp_path + ":Zone.Identifier"
+        if not _kernel32.DeleteFileW(ads_path):
+            err = ctypes.get_last_error()
+            if err != 2:  # ERROR_FILE_NOT_FOUND — ADS may not exist
+                logger.warning(
+                    "Failed to strip Zone.Identifier from %s (win32 error %d); "
+                    "SmartScreen may flag the updated exe", tmp_path, err)
+
         os.rename(tmp_path, dest_path)
 
     except Exception:
@@ -128,51 +142,82 @@ def apply_update(current_exe: str, new_exe: str) -> None:
     # All paths quoted for spaces. Rename-then-delete for safety:
     # old → _old, new → target, delete _old.
     old_backup = current_exe + ".old"
+    log_path = os.path.join(os.path.dirname(current_exe), "_talkie_update.log")
+
     script = f"""@echo off
+set "LOGFILE={log_path}"
+echo [%date% %time%] Update script started for PID {pid} >> "%LOGFILE%"
+
 :: Wait for PID {pid} to exit (up to ~20 seconds)
 set attempts=0
 :wait
 tasklist /FI "PID eq {pid}" /NH /FO CSV 2>NUL | find /I ",{pid}," >NUL
-if %ERRORLEVEL%==0 (
-    set /a attempts+=1
-    if %attempts% GEQ 20 goto fail
-    ping -n 2 127.0.0.1 >NUL
-    goto wait
+if %ERRORLEVEL% NEQ 0 goto pid_exited
+set /a attempts+=1
+if %attempts% GEQ 20 (
+    echo [%date% %time%] Timed out waiting for PID {pid} >> "%LOGFILE%"
+    goto fail
 )
+ping -n 2 127.0.0.1 >NUL
+goto wait
+
+:pid_exited
+echo [%date% %time%] PID {pid} exited >> "%LOGFILE%"
+
 :: Move old exe to backup (safe rollback point)
 if exist "{old_backup}" del /F "{old_backup}"
 move /Y "{current_exe}" "{old_backup}"
-if %ERRORLEVEL% NEQ 0 goto fail
+if %ERRORLEVEL% NEQ 0 (
+    echo [%date% %time%] Failed to move old exe to backup >> "%LOGFILE%"
+    goto fail
+)
+
 :: Move new exe into place
 move /Y "{new_exe}" "{current_exe}"
 if %ERRORLEVEL% NEQ 0 (
-    :: Rollback: restore old exe
+    echo [%date% %time%] Failed to move new exe, rolling back >> "%LOGFILE%"
     move /Y "{old_backup}" "{current_exe}"
+    if %ERRORLEVEL% NEQ 0 (
+        echo [%date% %time%] CRITICAL: Rollback also failed! Backup at: {old_backup} >> "%LOGFILE%"
+    )
     goto fail
 )
+
 :: Clean up backup
 del /F "{old_backup}"
+echo [%date% %time%] Exe swap complete >> "%LOGFILE%"
+
 :: Brief pause to let Windows fully release file locks before relaunch
 ping -n 3 127.0.0.1 >NUL
+
 :: Relaunch
+echo [%date% %time%] Launching: {current_exe} >> "%LOGFILE%"
 start "" "{current_exe}"
+echo [%date% %time%] Update complete >> "%LOGFILE%"
+
 :: Self-delete
 del /F "%~f0"
 exit /b 0
+
 :fail
+echo [%date% %time%] Update FAILED >> "%LOGFILE%"
 exit /b 1
 """
-    with open(script_path, "w") as f:
-        f.write(script)
+    try:
+        with open(script_path, "w") as f:
+            f.write(script)
 
-    # Launch hidden and detached so it survives our exit
-    subprocess.Popen(
-        ["cmd.exe", "/c", script_path],
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+        # Launch hidden and detached so it survives our exit
+        subprocess.Popen(
+            ["cmd.exe", "/c", script_path],
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as exc:
+        logger.error("Failed to launch update script: %s", exc)
+        raise RuntimeError(f"Could not start update process: {exc}") from exc
 
 
 def cleanup_update_files(base_dir: str) -> None:
@@ -180,7 +225,8 @@ def cleanup_update_files(base_dir: str) -> None:
     stale = [
         os.path.join(base_dir, name)
         for name in ("Talkie_update.exe", "Talkie_update.exe.tmp",
-                     "Talkie.exe.old", "_talkie_update.cmd")
+                     "Talkie.exe.old", "_talkie_update.cmd",
+                     "_talkie_update.log")
     ]
     for path in stale:
         try:

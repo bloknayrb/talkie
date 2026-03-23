@@ -601,7 +601,11 @@ def create_app(
         if not os.path.exists(update_path):
             return {"status": "error", "error": "No update file found."}
 
-        apply_update(sys.executable, update_path)
+        try:
+            apply_update(sys.executable, update_path)
+        except (RuntimeError, OSError) as exc:
+            logger.error("apply_update failed: %s", exc)
+            return {"status": "error", "error": str(exc)}
 
         # Schedule shutdown after a short delay so the HTTP response returns.
         # Failsafe os._exit ensures the process dies even if quit_app blocks

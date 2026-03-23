@@ -55,6 +55,15 @@ class HotkeyManager:
             self._modifier_codes,
         )
 
+    def _safe_callback(self, fn) -> None:
+        """Run *fn* and reset is_held on unhandled exceptions so the trigger
+        key never gets permanently stuck in a suppressed state."""
+        try:
+            fn()
+        except Exception:
+            logger.exception("Hotkey callback %s failed", fn.__name__)
+            self.is_held = False
+
     def _on_trigger_key(self, event: keyboard.KeyboardEvent) -> bool:
         """Handle trigger key events.  Runs in the hook thread (synchronous).
 
@@ -72,16 +81,22 @@ class HotkeyManager:
                 self.is_held = True
                 logger.info("Hotkey pressed: %s", self.hotkey)
                 # Dispatch to thread — hook thread has ~300ms Windows timeout
-                threading.Thread(target=self.on_press, daemon=True).start()
-            # Suppress trigger key while modifiers held to prevent
-            # OS side effects (e.g. Windows key opening Start Menu)
-            if all_mods_pressed:
+                threading.Thread(
+                    target=self._safe_callback, args=(self.on_press,),
+                    daemon=True,
+                ).start()
+            # Suppress trigger key while modifiers are held or while the
+            # hotkey is actively held (prevents OS side effects like Start Menu)
+            if all_mods_pressed or self.is_held:
                 return False
         elif event.event_type == keyboard.KEY_UP:
             if self.is_held:
                 self.is_held = False
                 logger.info("Hotkey released: %s", self.hotkey)
-                threading.Thread(target=self.on_release, daemon=True).start()
+                threading.Thread(
+                    target=self._safe_callback, args=(self.on_release,),
+                    daemon=True,
+                ).start()
                 return False
         return True
 

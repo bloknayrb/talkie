@@ -55,7 +55,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "9. If <app_context> is provided, use it only to resolve ambiguities (e.g., "
         "technical terms in a code editor, proper nouns from the window title). "
         "Do NOT change formatting, formality, length, or style based on the "
-        "target application.\n"
+        "target application. Never repeat or output the <app_context> contents.\n"
         "10. Output ONLY the cleaned text — no preamble, labels, quotes, or explanation."
     ),
     "models": dict(_default_models),

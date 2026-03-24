@@ -13,7 +13,7 @@ Talkie is a local, Windows-based dictation utility designed to be a lightweight 
 - **Hold-to-Talk Interaction**: Global hotkey (default: `ctrl+win`) allows for instant dictation.
 - **Near-Cursor Visual Feedback**: Anti-aliased floating indicator near your cursor shows recording (red with glow), processing (pulsing blue), and success (fading green checkmark) — rendered via Win32 layered window.
 - **Context Awareness**: Captures surrounding text and the target application's name and window title, giving the LLM the context it needs for accurate capitalization, spacing, and disambiguation of technical terms.
-- **Multi-Provider Support**: Supports OpenAI (Whisper), Groq (Whisper-v3), and Anthropic (Claude) for STT and LLM processing.
+- **Multi-Provider Support**: Cloud providers (OpenAI, Groq, Anthropic) and local options (whisper.cpp for STT, Ollama for LLM) — mix and match per your needs.
 - **Model Selection**: Choose STT and LLM models directly from Settings — no config file editing needed.
 - **Per-App Profiles**: Configure different system prompts, snippets, vocabulary, and temperature per application — Talkie automatically applies the matching profile based on the focused window.
 - **Built-in Profile Templates**: 6 ready-made templates — each with a tailored system prompt, default snippets, vocabulary, and pre-filled process names. Add from Settings with one click, then customize as needed:
@@ -31,6 +31,11 @@ Talkie is a local, Windows-based dictation utility designed to be a lightweight 
 - **Secure Key Storage**: API keys stored in Windows Credential Manager, never in config files.
 - **Error Notifications**: Windows toast notifications for pipeline errors and discarded recordings.
 - **Single Instance**: Only one copy can run at a time — prevents duplicate hotkey hooks.
+- **Auto-Updates**: Check for new releases, download, and restart in-place — all from the Settings UI.
+- **Dictation History**: Recent transcriptions accessible from the tray icon's "Recent" submenu — copy or re-inject past dictations.
+- **Start on Boot**: Optional Windows startup toggle from the tray menu — runs via the user registry, no admin required.
+- **Local STT**: Download and run whisper.cpp locally for fully offline speech-to-text — no API key needed.
+- **Ollama Integration**: Use locally-hosted LLMs via Ollama for text processing — keeps everything on your machine.
 - **Portable Executable**: Run as a single `.exe` with no installation or admin rights required.
 
 ## Getting Started
@@ -51,6 +56,8 @@ You can also right-click the tray icon and select **Settings** at any time, or s
 2. Hold your global hotkey (default: `ctrl+win`)
 3. Speak clearly
 4. Release the hotkey — Talkie processes your audio and injects the text at your cursor
+
+Talkie will notify you when updates are available — install them from the About section in Settings. To launch Talkie automatically when you log in, right-click the tray icon and enable **Start on Boot**.
 
 ## Build from Source
 
@@ -105,6 +112,12 @@ talkie_modules/
     profile_templates.py         # Built-in profile templates (Email, Chat, Code, etc.)
     hotkey_manager.py            # Global key hold/release listener
     text_injector.py             # Pastes processed text via clipboard
+    history.py                   # Dictation history ring buffer persisted to history.json
+    autostart.py                 # Start-on-boot via Windows registry
+    updater.py                   # GitHub release checker, downloader, and exe swap
+    providers.py                 # Provider/model registry (OpenAI, Groq, Anthropic, Ollama)
+    local_whisper.py             # whisper.cpp binary and model management for local STT
+    ollama_utils.py              # Ollama reachability check and model listing
     settings_server.py           # Bottle REST API for settings web UI
     status_indicator_native.py   # Win32 native layered window indicator with vectorized rendering
     icon_generator.py            # PIL-generated walkie-talkie icon
@@ -130,4 +143,4 @@ tests/
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the [MIT License](LICENSE).

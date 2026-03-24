@@ -157,9 +157,11 @@ def process_text_llm(
     system_prompt = system_prompt.replace("{snippets}", snippets_str)
     temperature = config.get("temperature", 0)
 
+    app_context_str = f'process="{process_name}" title="{window_title}"' if (process_name or window_title) else ""
+
     parts = []
-    if process_name or window_title:
-        parts.append(f'<app_context>process="{process_name}" title="{window_title}"</app_context>')
+    if app_context_str:
+        parts.append(f"<app_context>{app_context_str}</app_context>")
     parts.append(f"<previous_context>{context}</previous_context>")
     parts.append(f"<transcription>{transcription}</transcription>")
     user_prompt = "\n\n".join(parts)
@@ -172,6 +174,13 @@ def process_text_llm(
 
     logger.info("Processing with %s LLM", provider)
 
+    def _clean(raw: str) -> str:
+        """Strip app_context leak that some models echo at the start of their response."""
+        result = raw.strip()
+        if app_context_str and result.startswith(app_context_str):
+            result = result[len(app_context_str):].lstrip()
+        return result
+
     if provider_info["sdk"] == "openai":
         try:
             response = client.chat.completions.create(
@@ -182,7 +191,7 @@ def process_text_llm(
                 ],
                 temperature=temperature,
             )
-            result = response.choices[0].message.content.strip()
+            result = _clean(response.choices[0].message.content)
             logger.info("LLM response: %d chars", len(result))
             return result
         except Exception as e:
@@ -197,7 +206,7 @@ def process_text_llm(
                 max_tokens=1024,
                 temperature=temperature,
             )
-            result = response.content[0].text.strip()
+            result = _clean(response.content[0].text)
             logger.info("LLM response: %d chars", len(result))
             return result
         except Exception as e:

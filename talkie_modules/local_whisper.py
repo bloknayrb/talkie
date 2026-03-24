@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import threading
 import urllib.request
+import zipfile
 from typing import Callable, Optional
 
 import numpy.typing as npt
@@ -23,11 +24,12 @@ logger = get_logger("local_whisper")
 
 _WHISPER_BIN = os.path.join(BIN_DIR, "whisper-cli.exe")
 
-# whisper.cpp release to pull the binary from
-_WHISPER_CPP_VERSION = "v1.7.5"
+# whisper.cpp release to pull the binary from.
+# Ships as a zip containing whisper-cli.exe + required DLLs.
+_WHISPER_CPP_VERSION = "v1.8.4"
 _WHISPER_CPP_BIN_URL = (
     f"https://github.com/ggerganov/whisper.cpp/releases/download/"
-    f"{_WHISPER_CPP_VERSION}/whisper-cli-win64.exe"
+    f"{_WHISPER_CPP_VERSION}/whisper-bin-x64.zip"
 )
 
 # GGML model URLs from Hugging Face (ggerganov/whisper.cpp)
@@ -60,8 +62,12 @@ def _ensure_dirs() -> None:
 
 
 def is_binary_available() -> bool:
-    """Check if whisper-cli.exe exists."""
-    return os.path.isfile(_WHISPER_BIN)
+    """Check if whisper-cli.exe and its required DLLs are present."""
+    if not os.path.isfile(_WHISPER_BIN):
+        return False
+    # DLLs must also be present — without them the exe won't run,
+    # and their absence means a previous extraction was interrupted.
+    return any(f.lower().endswith(".dll") for f in os.listdir(BIN_DIR))
 
 
 def get_downloaded_models() -> list[str]:
@@ -130,14 +136,53 @@ def _download_file(
 
 def download_binary(
     progress_cb: Optional[Callable[[int, int], None]] = None,
+    phase_cb: Optional[Callable[[str], None]] = None,
 ) -> None:
-    """Download whisper-cli.exe from the whisper.cpp GitHub release."""
+    """Download whisper.cpp zip and extract whisper-cli.exe + DLLs to BIN_DIR.
+
+    progress_cb receives (downloaded_bytes, total_bytes) during the zip download.
+    phase_cb receives "extracting" when extraction begins.
+    Writes DLLs first, then the exe last — so an interrupted extraction leaves
+    is_binary_available() returning False and the download can be retried.
+    """
     with _download_lock:
         if is_binary_available():
             return
-        logger.info("Downloading whisper-cli.exe from %s", _WHISPER_CPP_BIN_URL)
-        _download_file(_WHISPER_CPP_BIN_URL, _WHISPER_BIN, progress_cb)
-        logger.info("whisper-cli.exe downloaded to %s", _WHISPER_BIN)
+        _ensure_dirs()
+        zip_path = os.path.join(BIN_DIR, "whisper-cli.tmp.zip")
+        logger.info(
+            "Downloading whisper.cpp %s from %s", _WHISPER_CPP_VERSION, _WHISPER_CPP_BIN_URL
+        )
+        _download_file(_WHISPER_CPP_BIN_URL, zip_path, progress_cb)
+
+        if phase_cb:
+            phase_cb("extracting")
+
+        try:
+            with zipfile.ZipFile(zip_path) as zf:
+                names = zf.namelist()
+                dll_entries = [
+                    n for n in names
+                    if n.startswith("Release/") and n.lower().endswith(".dll")
+                ]
+                exe_entry = "Release/whisper-cli.exe"
+
+                for entry in dll_entries:
+                    dest = os.path.join(BIN_DIR, os.path.basename(entry))
+                    with zf.open(entry) as src, open(dest, "wb") as dst:
+                        dst.write(src.read())
+                    logger.debug("Extracted %s", os.path.basename(entry))
+
+                if exe_entry not in names:
+                    raise IOError(f"{exe_entry} not found in whisper.cpp zip archive")
+                with zf.open(exe_entry) as src, open(_WHISPER_BIN, "wb") as dst:
+                    dst.write(src.read())
+                logger.info("Extracted whisper-cli.exe and DLLs to %s", BIN_DIR)
+        finally:
+            try:
+                os.unlink(zip_path)
+            except OSError:
+                pass
 
 
 def download_model(

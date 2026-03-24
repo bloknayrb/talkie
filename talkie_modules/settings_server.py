@@ -764,7 +764,7 @@ def create_app(
     # ---- Local Whisper ----
 
     _whisper_dl_state = {
-        "downloading": False, "target": "", "progress": 0, "error": None,
+        "downloading": False, "target": "", "progress": 0, "error": None, "phase": "",
     }
     _whisper_dl_lock = threading.Lock()
 
@@ -788,7 +788,7 @@ def create_app(
             if _whisper_dl_state["downloading"]:
                 return {"status": "already_downloading"}
             _whisper_dl_state.update(
-                downloading=True, target=target_label, progress=0, error=None,
+                downloading=True, target=target_label, progress=0, error=None, phase="downloading",
             )
 
         def _do_download():
@@ -801,6 +801,7 @@ def create_app(
                 with _whisper_dl_lock:
                     _whisper_dl_state["downloading"] = False
                     _whisper_dl_state["progress"] = 100
+                    _whisper_dl_state["phase"] = ""
             except Exception as exc:
                 logger.error("Whisper download failed (%s): %s", target_label, exc)
                 with _whisper_dl_lock:
@@ -815,7 +816,23 @@ def create_app(
         from talkie_modules.local_whisper import download_binary, is_binary_available
         if is_binary_available():
             return {"status": "ok", "message": "Already installed"}
-        return _start_whisper_download("binary", download_binary)
+
+        def _binary_with_phase(_):
+            # Scale zip download to 0-95% so the UI doesn't hit 100% before extraction.
+            def _scaled_progress(downloaded, total):
+                pct = round((downloaded / total * 95) if total else 0, 1)
+                with _whisper_dl_lock:
+                    _whisper_dl_state["progress"] = pct
+
+            def _phase(phase):
+                with _whisper_dl_lock:
+                    _whisper_dl_state["phase"] = phase
+                    if phase == "extracting":
+                        _whisper_dl_state["progress"] = 95
+
+            download_binary(_scaled_progress, _phase)
+
+        return _start_whisper_download("binary", _binary_with_phase)
 
     @app.route("/api/local/whisper/download-model", method="POST")
     def whisper_download_model():

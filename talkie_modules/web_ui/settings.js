@@ -487,13 +487,13 @@ async function downloadWhisperModel(modelName) {
     }
 }
 
-function showWhisperProgress(pct) {
+function showWhisperProgress(pct, phase) {
     const container = document.getElementById('whisper-download-progress');
     if (container) container.style.display = 'block';
     const fill = document.getElementById('whisper-progress-fill');
     if (fill) fill.style.width = pct + '%';
     const text = document.getElementById('whisper-progress-text');
-    if (text) text.textContent = pct + '%';
+    if (text) text.textContent = phase === 'extracting' ? 'Extracting…' : pct + '%';
 }
 
 function hideWhisperProgress() {
@@ -506,7 +506,7 @@ function startWhisperPoll() {
     whisperPollTimer = setInterval(async () => {
         const data = await api('GET', '/api/local/whisper/download');
         if (data.downloading) {
-            showWhisperProgress(data.progress);
+            showWhisperProgress(data.progress, data.phase);
         } else {
             clearInterval(whisperPollTimer);
             whisperPollTimer = null;

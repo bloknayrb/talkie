@@ -189,16 +189,6 @@ if %ERRORLEVEL% NEQ 0 (
 del /F "{old_backup}"
 echo [%date% %time%] Exe swap complete >> "%LOGFILE%"
 
-:: Clean up stale PyInstaller _MEI* temp directories left by os._exit(0)
-for /d %%D in ("%TEMP%\_MEI*") do (
-    rd /s /q "%%D" 2>NUL
-    if exist "%%D" (
-        echo [%date% %time%] Could not remove stale temp dir: %%D >> "%LOGFILE%"
-    ) else (
-        echo [%date% %time%] Cleaned stale temp dir: %%D >> "%LOGFILE%"
-    )
-)
-
 :: Brief pause to let Windows fully release file locks before relaunch
 ping -n 3 127.0.0.1 >NUL
 
@@ -255,18 +245,30 @@ def cleanup_update_files(base_dir: str) -> None:
         return
     current_mei = os.path.normcase(sys._MEIPASS)
     try:
-        for entry in os.scandir(tempfile.gettempdir()):
-            if not (entry.is_dir() and entry.name.startswith("_MEI")):
-                continue
-            if os.path.normcase(entry.path) == current_mei:
-                continue  # never touch our own active extraction
+        entries = list(os.scandir(tempfile.gettempdir()))
+    except OSError as exc:
+        logger.debug("Could not scan temp dir for stale _MEI dirs: %s", exc)
+        return
+    for entry in entries:
+        if not (entry.is_dir() and entry.name.startswith("_MEI")):
+            continue
+        if os.path.normcase(entry.path) == current_mei:
+            continue  # never touch our own active extraction
+        # Rename to a probe path first — if another PyInstaller app holds this
+        # dir as its extraction root, the rename will fail with EACCES/EPERM on
+        # Windows, preventing us from partially deleting a live app.
+        probe_path = entry.path + "_del"
+        try:
+            os.rename(entry.path, probe_path)
+        except OSError as exc:
+            logger.debug("Skipping _MEI dir %s (in use or inaccessible): %s", entry.path, exc)
+            continue
+        try:
+            shutil.rmtree(probe_path)
+            logger.debug("Cleaned stale _MEI dir: %s", entry.path)
+        except OSError as exc:
+            logger.debug("Could not remove stale _MEI dir %s: %s", entry.path, exc)
             try:
-                # Probe: rename-to-self fails immediately if any file is locked,
-                # preventing partial deletion of another running PyInstaller app.
-                os.rename(entry.path, entry.path)
-                shutil.rmtree(entry.path, ignore_errors=True)
-                logger.debug("Cleaned stale _MEI dir: %s", entry.path)
+                os.rename(probe_path, entry.path)  # restore original name
             except OSError:
-                pass  # locked by another process — leave it
-    except OSError:
-        pass
+                pass

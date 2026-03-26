@@ -9,8 +9,10 @@ import ctypes
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 
@@ -236,3 +238,37 @@ def cleanup_update_files(base_dir: str) -> None:
             pass  # already gone — expected on clean starts
         except OSError as exc:
             logger.debug("Could not clean up %s: %s", path, exc)
+
+    # Clean stale PyInstaller _MEI* temp dirs orphaned by os._exit(0).
+    # Only runs when frozen; skips our own active extraction directory.
+    if not getattr(sys, "frozen", False):
+        return
+    current_mei = os.path.normcase(sys._MEIPASS)
+    try:
+        entries = list(os.scandir(tempfile.gettempdir()))
+    except OSError as exc:
+        logger.debug("Could not scan temp dir for stale _MEI dirs: %s", exc)
+        return
+    for entry in entries:
+        if not (entry.is_dir() and entry.name.startswith("_MEI")):
+            continue
+        if os.path.normcase(entry.path) == current_mei:
+            continue  # never touch our own active extraction
+        # Rename to a probe path first — if another PyInstaller app holds this
+        # dir as its extraction root, the rename will fail with EACCES/EPERM on
+        # Windows, preventing us from partially deleting a live app.
+        probe_path = entry.path + "_del"
+        try:
+            os.rename(entry.path, probe_path)
+        except OSError as exc:
+            logger.debug("Skipping _MEI dir %s (in use or inaccessible): %s", entry.path, exc)
+            continue
+        try:
+            shutil.rmtree(probe_path)
+            logger.debug("Cleaned stale _MEI dir: %s", entry.path)
+        except OSError as exc:
+            logger.debug("Could not remove stale _MEI dir %s: %s", entry.path, exc)
+            try:
+                os.rename(probe_path, entry.path)  # restore original name
+            except OSError:
+                pass

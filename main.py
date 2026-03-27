@@ -27,7 +27,7 @@ from talkie_modules.paths import LOG_FILE, BASE_DIR
 
 logger = get_logger("app")
 
-__version__ = "1.6.4"
+__version__ = "1.6.5"
 
 # ---------------------------------------------------------------------------
 # Single-instance guard
@@ -53,8 +53,7 @@ class TalkieApp:
         self.config = load_config()
 
         # Initialize logging from config
-        level = getattr(logging, self.config.get("log_level", "INFO").upper(), logging.INFO)
-        setup_logging(level)
+        setup_logging(self._log_level())
 
         ensure_assets(self.config.get("notification_tone", "pop"))
         self.hotkey_manager: Optional[HotkeyManager] = None
@@ -67,6 +66,9 @@ class TalkieApp:
         self._pending_title: str = ""
         self._press_time: float = 0.0
         self._last_injected: str = ""
+
+    def _log_level(self) -> int:
+        return getattr(logging, self.config.get("log_level", "INFO").upper(), logging.INFO)
 
     def _strip_prior_injection(self, context: str) -> str:
         """Remove Talkie's own prior injection from captured context."""
@@ -91,6 +93,7 @@ class TalkieApp:
     def _on_config_saved(self) -> None:
         """Called by settings server when config is saved."""
         self.config = load_config()
+        logging.getLogger("talkie").setLevel(self._log_level())
         if self.hotkey_manager:
             self.hotkey_manager.stop()
         self.hotkey_manager = HotkeyManager(
@@ -251,7 +254,10 @@ class TalkieApp:
 
             try:
                 transcription = transcribe_audio(audio_data, config)
-                logger.info("Transcription: %s", transcription[:100])
+                logger.info("Transcription: %r", transcription[:100])
+                if not transcription or transcription.isspace():
+                    return _discard("STT returned empty transcription, discarding", "Nothing transcribed")
+                logger.info("Context: %r", clean_context[:100] if clean_context else "(empty)")
                 processed_text = process_text_llm(
                     transcription, clean_context, config,
                     process_name=pending_process, window_title=pending_title,

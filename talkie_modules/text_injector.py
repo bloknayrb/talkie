@@ -116,6 +116,11 @@ def inject_text(text: Optional[str], target_hwnd: int = 0, process_name: str = "
         logger.debug("Nothing to inject (empty text)")
         return
 
+    # Copy to clipboard BEFORE restoring focus. Some apps (Electron, browsers,
+    # editors) cache the clipboard at focus-gain time. If we copy after, the app
+    # sees the previous clipboard entry and pastes that instead of the new text.
+    pyperclip.copy(text)
+
     if target_hwnd:
         restored = _restore_focus(target_hwnd)
         # Sleep unconditionally — even failed restore may have partially shifted focus
@@ -124,8 +129,6 @@ def inject_text(text: Optional[str], target_hwnd: int = 0, process_name: str = "
             logger.debug("Restored focus to HWND=%d before injection", target_hwnd)
         else:
             logger.info("Focus restore failed for HWND=%d, injecting to current focus", target_hwnd)
-
-    pyperclip.copy(text)
 
     # Defensive: release any stale modifier keys before sending synthetic paste.
     # The hotkey combo (e.g. Ctrl+Win) may leave Ctrl in a held state if

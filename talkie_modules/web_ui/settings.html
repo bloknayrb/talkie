@@ -362,7 +362,16 @@
                     <p>Version: <span id="about-version">-</span></p>
                     <p>Hold-to-talk voice dictation with LLM processing.</p>
                     <p><a href="https://github.com/bloknayrb/talkie" target="_blank">GitHub Repository</a></p>
-                    <button class="btn btn-sm" id="open-log">Open Log File</button>
+                    <div class="form-row" style="margin-top: 8px; align-items: center; gap: 8px;">
+                        <button class="btn btn-sm" id="open-log">Open Log File</button>
+                        <label for="log-level" style="margin: 0;">Level:</label>
+                        <select id="log-level" style="width: auto;">
+                            <option value="DEBUG">Debug</option>
+                            <option value="INFO">Info</option>
+                            <option value="WARNING">Warning</option>
+                            <option value="ERROR">Error</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div class="form-group" style="margin-top: 20px;">

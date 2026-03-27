@@ -124,6 +124,11 @@ document.getElementById('notification-tone')?.addEventListener('change', async (
     await api('POST', '/api/config', { notification_tone: tone });
 });
 
+// Save log level whenever the dropdown changes
+document.getElementById('log-level')?.addEventListener('change', async (e) => {
+    await api('POST', '/api/config', { log_level: e.target.value });
+});
+
 // Save start-on-boot whenever the checkbox changes
 document.getElementById('start-on-boot')?.addEventListener('change', async (e) => {
     await api('POST', '/api/config', { start_on_boot: e.target.checked });
@@ -272,6 +277,7 @@ function populateUI() {
 
     // About (version bundled in config response)
     document.getElementById('about-version').textContent = config._version || '-';
+    setVal('log-level', (config.log_level || 'INFO').toUpperCase());
 
     // Start on boot
     const bootCheckbox = document.getElementById('start-on-boot');

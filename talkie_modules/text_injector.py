@@ -34,6 +34,21 @@ _TERMINAL_PROCESSES = frozenset({
     "mintty.exe",
 })
 
+# Subset of terminals that intercept Ctrl+Shift+V as paste at the emulator
+# layer (never reaching the PTY). These also support modern keyboard protocols
+# that send raw modifier events as escape sequences in raw mode, so we skip
+# the synthetic modifier pre-release for them.
+# Legacy Windows console hosts (cmd, conhost, powershell) use Ctrl+V for paste
+# and do NOT belong here.
+_RICHTERM_PROCESSES = frozenset({
+    "warp.exe",
+    "windowsterminal.exe",
+    "alacritty.exe",
+    "wezterm-gui.exe",
+    "hyper.exe",
+    "mintty.exe",
+})
+
 
 def is_terminal_process(process_name: str) -> bool:
     """Check whether a process name belongs to a known terminal emulator."""
@@ -109,8 +124,8 @@ def inject_text(text: Optional[str], target_hwnd: int = 0, process_name: str = "
     If target_hwnd is provided, attempt to restore focus to that window first.
     On failure, falls through to inject at whatever window currently has focus.
 
-    Terminal targets get clipboard-only mode (no synthetic Ctrl+V) to avoid
-    disrupting TUI apps like Claude Code that interpret ^V as a control char.
+    Terminal targets use Ctrl+Shift+V (handled by the terminal emulator, not
+    passed to the PTY) to avoid disrupting TUI apps like Claude Code.
     """
     if not text:
         logger.debug("Nothing to inject (empty text)")
@@ -130,18 +145,27 @@ def inject_text(text: Optional[str], target_hwnd: int = 0, process_name: str = "
         else:
             logger.info("Focus restore failed for HWND=%d, injecting to current focus", target_hwnd)
 
-    # Defensive: release any stale modifier keys before sending synthetic paste.
-    # The hotkey combo (e.g. Ctrl+Win) may leave Ctrl in a held state if
-    # the user's release timing is slightly off.
-    for mod in ("ctrl", "shift", "alt"):
-        try:
-            if keyboard.is_pressed(mod):
-                keyboard.release(mod)
-        except Exception:
-            pass
-    time.sleep(0.03)
-
-    keyboard.send("ctrl+v")
+    if process_name.lower() in _RICHTERM_PROCESSES:
+        # Modern terminal emulators (Warp, Windows Terminal, Alacritty, etc.)
+        # intercept Ctrl+Shift+V at the emulator layer, never passing it to the
+        # PTY. This avoids delivering ^V (0x16) to TUI apps like Claude Code's
+        # Ink that run in raw mode and interpret ^V as a control character.
+        # We also skip the modifier pre-release: these terminals implement
+        # modern keyboard protocols that translate raw modifier events into
+        # escape sequences in raw mode, so a synthetic ctrl-up can disrupt TUI.
+        keyboard.send("ctrl+shift+v")
+    else:
+        # Defensive: release any stale modifier keys before sending synthetic
+        # paste. The hotkey combo (e.g. Ctrl+Win) may leave Ctrl in a held
+        # state if the user's release timing is slightly off.
+        for mod in ("ctrl", "shift", "alt"):
+            try:
+                if keyboard.is_pressed(mod):
+                    keyboard.release(mod)
+            except Exception:
+                pass
+        time.sleep(0.03)
+        keyboard.send("ctrl+v")
     logger.info("Injected %d chars", len(text))
 
 

@@ -27,7 +27,7 @@ from talkie_modules.paths import LOG_FILE, BASE_DIR
 
 logger = get_logger("app")
 
-__version__ = "1.6.6"
+__version__ = "1.6.7"
 
 # ---------------------------------------------------------------------------
 # Single-instance guard

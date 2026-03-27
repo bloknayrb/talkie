@@ -58,6 +58,7 @@ PyInstaller.__main__.run([
     "--name=Talkie",
     "--noconsole",
     "--onefile",
+    "--runtime-tmpdir=%LOCALAPPDATA%\\Talkie",
     "--icon=assets/talkie.ico",
     "--paths=.",
     f"--add-data={web_ui_path};talkie_modules/web_ui/",

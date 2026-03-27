@@ -189,6 +189,11 @@ if %ERRORLEVEL% NEQ 0 (
 del /F "{old_backup}"
 echo [%date% %time%] Exe swap complete >> "%LOGFILE%"
 
+:: Clean stale _MEI* extraction dirs from both old and new locations.
+:: This runs even if Python fails to start, which is the whole point of this fix.
+for /d %%D in ("%TEMP%\\_MEI*") do rmdir /s /q "%%D" 2>NUL
+for /d %%D in ("%LOCALAPPDATA%\\Talkie\\_MEI*") do rmdir /s /q "%%D" 2>NUL
+
 :: Brief pause to let Windows fully release file locks before relaunch
 ping -n 3 127.0.0.1 >NUL
 
@@ -244,31 +249,39 @@ def cleanup_update_files(base_dir: str) -> None:
     if not getattr(sys, "frozen", False):
         return
     current_mei = os.path.normcase(sys._MEIPASS)
-    try:
-        entries = list(os.scandir(tempfile.gettempdir()))
-    except OSError as exc:
-        logger.debug("Could not scan temp dir for stale _MEI dirs: %s", exc)
-        return
-    for entry in entries:
-        if not (entry.is_dir() and entry.name.startswith("_MEI")):
-            continue
-        if os.path.normcase(entry.path) == current_mei:
-            continue  # never touch our own active extraction
-        # Rename to a probe path first — if another PyInstaller app holds this
-        # dir as its extraction root, the rename will fail with EACCES/EPERM on
-        # Windows, preventing us from partially deleting a live app.
-        probe_path = entry.path + "_del"
+    # Scan both the system temp dir (old extraction location) and
+    # %LOCALAPPDATA%\Talkie (new location via --runtime-tmpdir) so that
+    # users upgrading from older builds get both locations cleaned up.
+    scan_dirs = [tempfile.gettempdir()]
+    talkie_data = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Talkie")
+    if os.path.isdir(talkie_data):
+        scan_dirs.append(talkie_data)
+    for scan_dir in scan_dirs:
         try:
-            os.rename(entry.path, probe_path)
+            entries = list(os.scandir(scan_dir))
         except OSError as exc:
-            logger.debug("Skipping _MEI dir %s (in use or inaccessible): %s", entry.path, exc)
+            logger.debug("Could not scan %s for stale _MEI dirs: %s", scan_dir, exc)
             continue
-        try:
-            shutil.rmtree(probe_path)
-            logger.debug("Cleaned stale _MEI dir: %s", entry.path)
-        except OSError as exc:
-            logger.debug("Could not remove stale _MEI dir %s: %s", entry.path, exc)
+        for entry in entries:
+            if not (entry.is_dir() and entry.name.startswith("_MEI")):
+                continue
+            if os.path.normcase(entry.path) == current_mei:
+                continue  # never touch our own active extraction
+            # Rename to a probe path first — if another PyInstaller app holds this
+            # dir as its extraction root, the rename will fail with EACCES/EPERM on
+            # Windows, preventing us from partially deleting a live app.
+            probe_path = entry.path + "_del"
             try:
-                os.rename(probe_path, entry.path)  # restore original name
-            except OSError:
-                pass
+                os.rename(entry.path, probe_path)
+            except OSError as exc:
+                logger.debug("Skipping _MEI dir %s (in use or inaccessible): %s", entry.path, exc)
+                continue
+            try:
+                shutil.rmtree(probe_path)
+                logger.debug("Cleaned stale _MEI dir: %s", entry.path)
+            except OSError as exc:
+                logger.debug("Could not remove stale _MEI dir %s: %s", entry.path, exc)
+                try:
+                    os.rename(probe_path, entry.path)  # restore original name
+                except OSError:
+                    pass

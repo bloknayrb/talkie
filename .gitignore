@@ -23,6 +23,7 @@ talkie.log.*
 build/
 dist/
 *.spec
+_MEI*/
 
 # Letta
 .letta/

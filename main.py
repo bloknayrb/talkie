@@ -262,6 +262,16 @@ class TalkieApp:
                     transcription, clean_context, config,
                     process_name=pending_process, window_title=pending_title,
                 )
+                # Prepend a space when the cursor is flush against terminal
+                # punctuation. The LLM outputs only the new text (no leading
+                # space), so without this "Hello world." + "New sentence." →
+                # "Hello world.New sentence." instead of the intended result.
+                # If context ends with a space the user already has separation;
+                # if it ends with punctuation we add one.
+                if (context[-1:] in ".!?"
+                        and processed_text
+                        and not processed_text[0:1].isspace()):
+                    processed_text = " " + processed_text
                 inject_text(processed_text, target_hwnd, process_name=pending_process)
                 self._last_injected = processed_text
                 from talkie_modules.history import add_entry

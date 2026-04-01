@@ -177,8 +177,10 @@ def process_text_llm(
     def _clean(raw: str) -> str:
         """Strip app_context leak that some models echo at the start of their response."""
         result = raw.strip()
-        if app_context_str and result.startswith(app_context_str):
-            result = result[len(app_context_str):].lstrip()
+        if app_context_str:
+            idx = result.find(app_context_str)
+            if idx != -1 and idx < len(app_context_str):
+                result = result[idx + len(app_context_str):].lstrip()
         return result
 
     if provider_info["sdk"] == "openai":

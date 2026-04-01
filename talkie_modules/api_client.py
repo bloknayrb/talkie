@@ -186,10 +186,10 @@ def process_text_llm(
             idx = result.find(app_context_str)
             # Only strip if the echo starts near position 0.  The threshold
             # equals the context string's own length — generous enough to cover
-            # XML-tag wrappers or a few junk tokens the model may prepend, but
-            # small enough to avoid false positives in the body of the response.
+            # a few junk tokens the model may prepend, but small enough to
+            # avoid false positives deeper in the response body.
             if idx != -1 and idx < len(app_context_str):
-                logger.debug("Stripped echoed app_context at position %d", idx)
+                logger.info("Stripped echoed app_context at position %d", idx)
                 result = result[idx + len(app_context_str):].lstrip()
         return result
 

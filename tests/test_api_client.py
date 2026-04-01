@@ -300,6 +300,41 @@ class TestCleanContextEcho:
         assert f'process="{self._PROCESS}"' in result
 
 
+    @patch("talkie_modules.api_client._get_anthropic_client")
+    def test_strips_echo_anthropic_provider(self, mock_get_client: MagicMock) -> None:
+        """Verify _clean() strips echoed app_context through the Anthropic code path."""
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text=f"{self._CTX} Anthropic cleaned")]
+        mock_client.messages.create.return_value = mock_response
+        mock_get_client.return_value = mock_client
+
+        config = {
+            "api_provider": "anthropic",
+            "anthropic_key": "sk-ant-test1234567890123",
+            "models": {"anthropic_llm": "claude-sonnet-4-20250514"},
+            "snippets": {},
+            "custom_vocabulary": [],
+            "system_prompt": "Test {snippets} {vocabulary}",
+        }
+        result = process_text_llm(
+            "hello", "ctx", config,
+            process_name=self._PROCESS, window_title=self._TITLE,
+        )
+        assert result == "Anthropic cleaned"
+
+    @patch("talkie_modules.api_client._get_openai_client")
+    def test_strips_only_first_occurrence(self, mock_get_client: MagicMock) -> None:
+        """When context appears at position 0 AND later in the body, only the first is stripped."""
+        body_with_echo = f"{self._CTX} The app reports {self._CTX} is active."
+        _mock_openai_completion(mock_get_client, text=body_with_echo)
+        result = process_text_llm(
+            "hello", "ctx", _openai_llm_config(),
+            process_name=self._PROCESS, window_title=self._TITLE,
+        )
+        assert result == f"The app reports {self._CTX} is active."
+
+
 class TestLocalWhisperDispatch:
     @patch("talkie_modules.local_whisper.transcribe")
     def test_dispatches_to_local_whisper(self, mock_local: MagicMock) -> None:

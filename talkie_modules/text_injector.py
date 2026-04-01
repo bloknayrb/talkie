@@ -137,7 +137,7 @@ def inject_text(text: Optional[str], target_hwnd: int = 0, process_name: str = "
         sanitized = text.replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace("\t", " ")
         if sanitized != text:
             logger.info("Sanitized %d control chars for terminal target %s",
-                        len(text) - len(sanitized.replace("  ", " ")), process_name)
+                        len(text) - len(sanitized), process_name)
         text = sanitized
 
     # Copy to clipboard BEFORE restoring focus. Some apps (Electron, browsers,

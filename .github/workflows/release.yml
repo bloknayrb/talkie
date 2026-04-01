@@ -20,10 +20,18 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt pytest
+
+      - name: Run tests
+        run: pytest tests/ -v
 
       - name: Build executable
         run: python build.py
+
+      - name: Generate checksum
+        run: |
+          $hash = (Get-FileHash dist/Talkie.exe -Algorithm SHA256).Hash
+          "$hash  Talkie.exe" | Out-File -Encoding ascii dist/SHA256SUMS.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -34,5 +42,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Talkie.exe
+          files: |
+            dist/Talkie.exe
+            dist/SHA256SUMS.txt
           generate_release_notes: true

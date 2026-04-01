@@ -175,10 +175,22 @@ def process_text_llm(
     logger.info("Processing with %s LLM", provider)
 
     def _clean(raw: str) -> str:
-        """Strip app_context leak that some models echo at the start of their response."""
+        """Strip app_context leak that some models echo near the start of their response.
+
+        Uses a proximity guard: the echoed string must begin within the first
+        ``len(app_context_str)`` characters, so legitimate occurrences deeper
+        in the response are left untouched.
+        """
         result = raw.strip()
-        if app_context_str and result.startswith(app_context_str):
-            result = result[len(app_context_str):].lstrip()
+        if app_context_str:
+            idx = result.find(app_context_str)
+            # Only strip if the echo starts near position 0.  The threshold
+            # equals the context string's own length — generous enough to cover
+            # a few junk tokens the model may prepend, but small enough to
+            # avoid false positives deeper in the response body.
+            if idx != -1 and idx < len(app_context_str):
+                logger.info("Stripped echoed app_context at position %d", idx)
+                result = result[idx + len(app_context_str):].lstrip()
         return result
 
     if provider_info["sdk"] == "openai":

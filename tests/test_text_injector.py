@@ -213,6 +213,108 @@ class TestTerminalDetection:
         assert is_terminal_process("") is False
 
 
+class TestTerminalSanitization:
+    """Test control-character sanitization for terminal injection targets."""
+
+    @patch("talkie_modules.text_injector.time")
+    @patch("talkie_modules.text_injector.keyboard")
+    @patch("talkie_modules.text_injector.pyperclip")
+    def test_newlines_replaced_with_spaces(
+        self, mock_clip: MagicMock, mock_kb: MagicMock, mock_time: MagicMock,
+    ) -> None:
+        from talkie_modules.text_injector import inject_text
+        mock_kb.is_pressed.return_value = False
+        inject_text("hello\nworld", process_name="cmd.exe")
+        assert mock_clip.copy.call_args[0][0] == "hello world"
+
+    @patch("talkie_modules.text_injector.time")
+    @patch("talkie_modules.text_injector.keyboard")
+    @patch("talkie_modules.text_injector.pyperclip")
+    def test_crlf_replaced_with_single_space(
+        self, mock_clip: MagicMock, mock_kb: MagicMock, mock_time: MagicMock,
+    ) -> None:
+        """\\r\\n is replaced as a unit — should produce one space, not two."""
+        from talkie_modules.text_injector import inject_text
+        mock_kb.is_pressed.return_value = False
+        inject_text("hello\r\nworld", process_name="cmd.exe")
+        assert mock_clip.copy.call_args[0][0] == "hello world"
+
+    @patch("talkie_modules.text_injector.time")
+    @patch("talkie_modules.text_injector.keyboard")
+    @patch("talkie_modules.text_injector.pyperclip")
+    def test_tabs_replaced_with_spaces(
+        self, mock_clip: MagicMock, mock_kb: MagicMock, mock_time: MagicMock,
+    ) -> None:
+        from talkie_modules.text_injector import inject_text
+        mock_kb.is_pressed.return_value = False
+        inject_text("col1\tcol2", process_name="cmd.exe")
+        assert mock_clip.copy.call_args[0][0] == "col1 col2"
+
+    @patch("talkie_modules.text_injector.time")
+    @patch("talkie_modules.text_injector.keyboard")
+    @patch("talkie_modules.text_injector.pyperclip")
+    def test_mixed_control_chars(
+        self, mock_clip: MagicMock, mock_kb: MagicMock, mock_time: MagicMock,
+    ) -> None:
+        from talkie_modules.text_injector import inject_text
+        mock_kb.is_pressed.return_value = False
+        inject_text("a\r\nb\nc\td", process_name="cmd.exe")
+        assert mock_clip.copy.call_args[0][0] == "a b c d"
+
+    @patch("talkie_modules.text_injector.time")
+    @patch("talkie_modules.text_injector.keyboard")
+    @patch("talkie_modules.text_injector.pyperclip")
+    def test_consecutive_newlines_become_multiple_spaces(
+        self, mock_clip: MagicMock, mock_kb: MagicMock, mock_time: MagicMock,
+    ) -> None:
+        """Consecutive newlines each become a space — no collapsing."""
+        from talkie_modules.text_injector import inject_text
+        mock_kb.is_pressed.return_value = False
+        inject_text("a\n\n\nb", process_name="cmd.exe")
+        assert mock_clip.copy.call_args[0][0] == "a   b"
+
+    @patch("talkie_modules.text_injector.time")
+    @patch("talkie_modules.text_injector.keyboard")
+    @patch("talkie_modules.text_injector.pyperclip")
+    def test_non_terminal_skips_sanitization(
+        self, mock_clip: MagicMock, mock_kb: MagicMock, mock_time: MagicMock,
+    ) -> None:
+        from talkie_modules.text_injector import inject_text
+        mock_kb.is_pressed.return_value = False
+        inject_text("hello\nworld", process_name="chrome.exe")
+        assert mock_clip.copy.call_args[0][0] == "hello\nworld"
+
+    @patch("talkie_modules.text_injector.time")
+    @patch("talkie_modules.text_injector.keyboard")
+    @patch("talkie_modules.text_injector.pyperclip")
+    def test_sanitization_is_case_insensitive(
+        self, mock_clip: MagicMock, mock_kb: MagicMock, mock_time: MagicMock,
+    ) -> None:
+        from talkie_modules.text_injector import inject_text
+        mock_kb.is_pressed.return_value = False
+        inject_text("hello\nworld", process_name="PowerShell.exe")
+        assert mock_clip.copy.call_args[0][0] == "hello world"
+
+    @patch("talkie_modules.text_injector.time")
+    @patch("talkie_modules.text_injector.keyboard")
+    @patch("talkie_modules.text_injector.pyperclip")
+    def test_sanitization_log_count_accurate(
+        self, mock_clip: MagicMock, mock_kb: MagicMock, mock_time: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Logged count must equal actual characters removed, not collapsed spaces."""
+        import logging
+        from talkie_modules.text_injector import inject_text
+        mock_kb.is_pressed.return_value = False
+        text = "a\r\nb\nc\td"  # \r\n→" " (removes 1 char), \n→" " (0), \t→" " (0) → net 1 char removed
+        with caplog.at_level(logging.INFO, logger="talkie.injector"):
+            inject_text(text, process_name="cmd.exe")
+        log_line = [r for r in caplog.records if "Sanitized" in r.message]
+        assert len(log_line) == 1
+        # Original is 8 chars ("a\r\nb\nc\td"), sanitized is "a b c d" (7 chars)
+        assert "1 control chars" in log_line[0].message
+
+
 class TestModifierRelease:
     """Test that stale modifier keys are released before paste."""
 

@@ -131,6 +131,15 @@ def inject_text(text: Optional[str], target_hwnd: int = 0, process_name: str = "
         logger.debug("Nothing to inject (empty text)")
         return
 
+    # Sanitize text for terminal targets: strip control characters that could
+    # be interpreted as commands (newlines execute, tabs may trigger completion).
+    if process_name.lower() in _TERMINAL_PROCESSES:
+        sanitized = text.replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace("\t", " ")
+        if sanitized != text:
+            logger.info("Sanitized %d control chars for terminal target %s",
+                        len(text) - len(sanitized.replace("  ", " ")), process_name)
+        text = sanitized
+
     # Copy to clipboard BEFORE restoring focus. Some apps (Electron, browsers,
     # editors) cache the clipboard at focus-gain time. If we copy after, the app
     # sees the previous clipboard entry and pastes that instead of the new text.

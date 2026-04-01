@@ -210,6 +210,96 @@ class TestProcessTextLLM:
         assert "<app_context>" not in user_msg
 
 
+class TestCleanContextEcho:
+    """Tests for _clean() stripping of echoed app_context from LLM responses."""
+
+    _PROCESS = "Code.exe"
+    _TITLE = "main.py - VS Code"
+    _CTX = f'process="{_PROCESS}" title="{_TITLE}"'
+
+    @patch("talkie_modules.api_client._get_openai_client")
+    def test_strips_exact_prefix_echo(self, mock_get_client: MagicMock) -> None:
+        """Exact app_context at position 0 is stripped."""
+        _mock_openai_completion(mock_get_client, text=f"{self._CTX} Here is the real text")
+        result = process_text_llm(
+            "hello", "ctx", _openai_llm_config(),
+            process_name=self._PROCESS, window_title=self._TITLE,
+        )
+        assert result == "Here is the real text"
+
+    @patch("talkie_modules.api_client._get_openai_client")
+    def test_strips_echo_with_leading_junk(self, mock_get_client: MagicMock) -> None:
+        """Echo preceded by a few junk characters (the original bug) is stripped."""
+        _mock_openai_completion(mock_get_client, text=f"0 {self._CTX} Cleaned output")
+        result = process_text_llm(
+            "hello", "ctx", _openai_llm_config(),
+            process_name=self._PROCESS, window_title=self._TITLE,
+        )
+        assert result == "Cleaned output"
+
+    @patch("talkie_modules.api_client._get_openai_client")
+    def test_does_not_strip_deep_echo(self, mock_get_client: MagicMock) -> None:
+        """Context string far into the response body is NOT stripped."""
+        padding = "A" * len(self._CTX)  # pushes idx to exactly len(app_context_str)
+        raw = f"{padding}{self._CTX} trailing"
+        _mock_openai_completion(mock_get_client, text=raw)
+        result = process_text_llm(
+            "hello", "ctx", _openai_llm_config(),
+            process_name=self._PROCESS, window_title=self._TITLE,
+        )
+        assert result == raw.strip()
+
+    @patch("talkie_modules.api_client._get_openai_client")
+    def test_boundary_max_proximity(self, mock_get_client: MagicMock) -> None:
+        """idx == len(app_context_str) - 1 is the last offset that triggers stripping."""
+        padding = "X" * (len(self._CTX) - 1)
+        _mock_openai_completion(mock_get_client, text=f"{padding}{self._CTX} result")
+        result = process_text_llm(
+            "hello", "ctx", _openai_llm_config(),
+            process_name=self._PROCESS, window_title=self._TITLE,
+        )
+        assert result == "result"
+
+    @patch("talkie_modules.api_client._get_openai_client")
+    def test_no_strip_when_no_context(self, mock_get_client: MagicMock) -> None:
+        """Without process_name/window_title, _clean() only applies .strip()."""
+        _mock_openai_completion(mock_get_client, text="  Clean text  ")
+        result = process_text_llm("hello", "ctx", _openai_llm_config())
+        assert result == "Clean text"
+
+    @patch("talkie_modules.api_client._get_openai_client")
+    def test_no_echo_with_context(self, mock_get_client: MagicMock) -> None:
+        """When context is provided but LLM doesn't echo it, text passes through."""
+        _mock_openai_completion(mock_get_client, text="Normal response text")
+        result = process_text_llm(
+            "hello", "ctx", _openai_llm_config(),
+            process_name=self._PROCESS, window_title=self._TITLE,
+        )
+        assert result == "Normal response text"
+
+    @patch("talkie_modules.api_client._get_openai_client")
+    def test_empty_response(self, mock_get_client: MagicMock) -> None:
+        """Empty LLM response returns empty string."""
+        _mock_openai_completion(mock_get_client, text="")
+        result = process_text_llm(
+            "hello", "ctx", _openai_llm_config(),
+            process_name=self._PROCESS, window_title=self._TITLE,
+        )
+        assert result == ""
+
+    @patch("talkie_modules.api_client._get_openai_client")
+    def test_partial_context_not_stripped(self, mock_get_client: MagicMock) -> None:
+        """A partial app_context match (only process, no title) is not stripped."""
+        _mock_openai_completion(
+            mock_get_client, text=f'process="{self._PROCESS}" is running fine',
+        )
+        result = process_text_llm(
+            "hello", "ctx", _openai_llm_config(),
+            process_name=self._PROCESS, window_title=self._TITLE,
+        )
+        assert f'process="{self._PROCESS}"' in result
+
+
 class TestLocalWhisperDispatch:
     @patch("talkie_modules.local_whisper.transcribe")
     def test_dispatches_to_local_whisper(self, mock_local: MagicMock) -> None:

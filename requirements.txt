@@ -1,4 +1,4 @@
-sounddevice>=0.4.6
+sounddevice>=0.5.5
 soundfile>=0.12.1
 numpy>=1.24.0
 keyboard>=0.13.5

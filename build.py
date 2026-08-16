@@ -73,6 +73,7 @@ PyInstaller.__main__.run([
     "--hidden-import=keyring.backends.Windows",
     "--hidden-import=dotenv",
     "--hidden-import=bottle",
+    "--hidden-import=win32com.client",
     "--clean",
     *exclude_args,
     *vcruntime_args,

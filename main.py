@@ -318,6 +318,12 @@ class TalkieApp:
             if not is_autostart_enabled():
                 enable_autostart()
 
+        # 0c. Ensure the Start Menu shortcut exists so Talkie is launchable
+        # from the Start Menu and launchers that index it (Flow Launcher,
+        # PowerToys Run). No-op in dev mode.
+        from talkie_modules.start_menu import create_start_menu_shortcut
+        create_start_menu_shortcut()
+
         # 1. Start hotkey listener
         self.hotkey_manager = HotkeyManager(
             self.config.get("hotkey", "ctrl+win"), self.on_press, self.on_release

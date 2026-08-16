@@ -34,6 +34,31 @@ jobs:
       - name: Build executable
         run: python build.py
 
+      - name: Smoke-test executable
+        run: |
+          # The exe is built --noconsole, so it detaches from the shell and its
+          # stdout goes nowhere: the exit code has to come from the process
+          # object and the detail from a report file. Start-Process resolves
+          # relative paths against the process CWD rather than $PWD, so both
+          # paths are absolute.
+          $exe = Join-Path $PWD 'dist\Talkie.exe'
+          $log = Join-Path $PWD 'selftest.log'
+          $p = Start-Process -FilePath $exe -ArgumentList '--selftest', $log -PassThru
+          # A failed top-level import raises a blocking traceback dialog under
+          # the windowed bootloader, which would otherwise hang the whole job.
+          if (-not $p.WaitForExit(120000)) {
+            $p.Kill()
+            Write-Error "Self-test did not exit within 120s"
+            exit 1
+          }
+          $p.WaitForExit()
+          if (Test-Path $log) { Get-Content $log }
+          if ($p.ExitCode -ne 0) {
+            Write-Error "Self-test failed (exit $($p.ExitCode))"
+            exit 1
+          }
+          Write-Host "Self-test passed"
+
       - name: Generate checksum
         run: |
           $hash = (Get-FileHash dist/Talkie.exe -Algorithm SHA256).Hash

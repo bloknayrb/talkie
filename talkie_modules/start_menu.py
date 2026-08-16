@@ -2,6 +2,7 @@
 
 import os
 import sys
+import threading
 
 from talkie_modules.logger import get_logger
 
@@ -46,6 +47,7 @@ def create_start_menu_shortcut() -> bool:
     shortcut_path = os.path.join(programs_dir, _SHORTCUT_NAME)
 
     try:
+        import pythoncom
         import win32com.client
     except ImportError:
         logger.warning("win32com unavailable; skipping Start Menu shortcut")
@@ -54,6 +56,17 @@ def create_start_menu_shortcut() -> bool:
     target = sys.executable
     working_dir = os.path.dirname(sys.executable)
     icon = sys.executable + ",0"
+
+    # COM apartments are per-thread, and this runs on a worker thread, so the
+    # main thread's initialization does not carry over.
+    com_ready = False
+    try:
+        pythoncom.CoInitialize()
+        com_ready = True
+    except Exception as e:
+        # Already initialized under an incompatible apartment model; Dispatch
+        # still works on the existing one.
+        logger.debug("CoInitialize skipped: %s", e)
 
     try:
         os.makedirs(programs_dir, exist_ok=True)
@@ -95,3 +108,24 @@ def create_start_menu_shortcut() -> bool:
     except Exception as e:
         logger.error("Failed to create Start Menu shortcut: %s", e)
         return False
+    finally:
+        if com_ready:
+            pythoncom.CoUninitialize()
+
+
+def create_start_menu_shortcut_async() -> threading.Thread:
+    """Reconcile the shortcut on a worker thread, off the startup path.
+
+    Dispatch/Save are normally instant, but they are out-of-process COM calls
+    with no timeout available to us. Running them inline would put a hung
+    WScript.Shell — a broken registration, an AV shim — between launch and the
+    hotkey listener and tray icon. The thread is a daemon, so a hang delays
+    nothing and does not keep the process alive at exit.
+    """
+    thread = threading.Thread(
+        target=create_start_menu_shortcut,
+        name="start-menu-shortcut",
+        daemon=True,
+    )
+    thread.start()
+    return thread

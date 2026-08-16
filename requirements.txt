@@ -1,5 +1,5 @@
 sounddevice>=0.5.5
-soundfile>=0.13.1
+soundfile>=0.14.0
 numpy>=1.24.0
 keyboard>=0.13.5
 pyautogui>=0.9.54

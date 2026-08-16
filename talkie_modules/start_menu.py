@@ -11,34 +11,36 @@ _SHORTCUT_NAME = "Talkie.lnk"
 
 
 def create_start_menu_shortcut() -> bool:
-    """Create a Start Menu shortcut for Talkie if one doesn't already exist.
+    """Create the Start Menu shortcut, or repoint a stale one at the current exe.
 
-    No-op in dev mode (non-frozen). Returns True if the shortcut exists
-    or was successfully created.
+    No-op in dev mode (non-frozen). Returns True if the shortcut is present
+    and targets this exe, or was successfully written.
     """
     if not getattr(sys, "frozen", False):
         logger.debug("Start Menu shortcut only created for the packaged exe")
         return False
 
-    programs_dir = os.path.join(
-        os.environ.get("APPDATA", ""),
-        "Microsoft", "Windows", "Start Menu", "Programs",
-    )
-    if not programs_dir:
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
         logger.warning("APPDATA not set; cannot create Start Menu shortcut")
         return False
 
+    programs_dir = os.path.join(
+        appdata, "Microsoft", "Windows", "Start Menu", "Programs"
+    )
     shortcut_path = os.path.join(programs_dir, _SHORTCUT_NAME)
-    if os.path.isfile(shortcut_path):
-        return True
 
     try:
         import win32com.client
         shell = win32com.client.Dispatch("WScript.Shell")
         sc = shell.CreateShortcut(shortcut_path)
+        # Reconcile a pre-existing shortcut with the current exe path — the
+        # portable exe can be moved between launches, same as autostart.
+        if os.path.isfile(shortcut_path) and sc.TargetPath == sys.executable:
+            return True
         sc.TargetPath = sys.executable
         sc.WorkingDirectory = os.path.dirname(sys.executable)
-        sc.IconLocation = os.path.join(sys.executable, ",0")
+        sc.IconLocation = sys.executable + ",0"
         sc.Save()
         logger.info("Created Start Menu shortcut: %s", shortcut_path)
         return True

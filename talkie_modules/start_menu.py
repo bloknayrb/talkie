@@ -10,11 +10,26 @@ logger = get_logger("start_menu")
 _SHORTCUT_NAME = "Talkie.lnk"
 
 
-def create_start_menu_shortcut() -> bool:
-    """Create the Start Menu shortcut, or repoint a stale one at the current exe.
+def _same_path(a: str, b: str) -> bool:
+    """Compare two Windows paths case-insensitively, resolving 8.3 short names.
 
-    No-op in dev mode (non-frozen). Returns True if the shortcut is present
-    and targets this exe, or was successfully written.
+    Shell resolves a .lnk's TargetPath through IShellLinkW, which may hand back
+    a different case or the short (8.3) form of the path we originally wrote, so
+    a plain `==` would report drift on every launch.
+    """
+    try:
+        return os.path.normcase(os.path.realpath(a)) == os.path.normcase(
+            os.path.realpath(b)
+        )
+    except OSError:
+        return os.path.normcase(a) == os.path.normcase(b)
+
+
+def create_start_menu_shortcut() -> bool:
+    """Create the Start Menu shortcut, or reconcile a stale one with this exe.
+
+    No-op in dev mode (non-frozen). Returns True if the shortcut already matches
+    this exe, or was successfully written.
     """
     if not getattr(sys, "frozen", False):
         logger.debug("Start Menu shortcut only created for the packaged exe")
@@ -32,21 +47,51 @@ def create_start_menu_shortcut() -> bool:
 
     try:
         import win32com.client
-        shell = win32com.client.Dispatch("WScript.Shell")
-        sc = shell.CreateShortcut(shortcut_path)
-        # Reconcile a pre-existing shortcut with the current exe path — the
-        # portable exe can be moved between launches, same as autostart.
-        if os.path.isfile(shortcut_path) and sc.TargetPath == sys.executable:
-            return True
-        sc.TargetPath = sys.executable
-        sc.WorkingDirectory = os.path.dirname(sys.executable)
-        sc.IconLocation = sys.executable + ",0"
-        sc.Save()
-        logger.info("Created Start Menu shortcut: %s", shortcut_path)
-        return True
     except ImportError:
         logger.warning("win32com unavailable; skipping Start Menu shortcut")
         return False
+
+    target = sys.executable
+    working_dir = os.path.dirname(sys.executable)
+    icon = sys.executable + ",0"
+
+    try:
+        os.makedirs(programs_dir, exist_ok=True)
+        shell = win32com.client.Dispatch("WScript.Shell")
+        existed = os.path.isfile(shortcut_path)
+        try:
+            sc = shell.CreateShortcut(shortcut_path)
+        except Exception as e:
+            # A corrupt or non-.lnk file at this path would otherwise wedge us
+            # into failing here on every launch. Discard it and start clean.
+            if not existed:
+                raise
+            logger.warning("Discarding unreadable Start Menu shortcut: %s", e)
+            os.remove(shortcut_path)
+            existed = False
+            sc = shell.CreateShortcut(shortcut_path)
+
+        # Reconcile every property, not just the target — the portable exe can
+        # move between launches, and a shortcut written by an older build may
+        # point at the right exe with a stale working dir or icon.
+        if (
+            existed
+            and _same_path(sc.TargetPath, target)
+            and _same_path(sc.WorkingDirectory, working_dir)
+            and os.path.normcase(sc.IconLocation) == os.path.normcase(icon)
+        ):
+            return True
+
+        sc.TargetPath = target
+        sc.WorkingDirectory = working_dir
+        sc.IconLocation = icon
+        sc.Save()
+        logger.info(
+            "%s Start Menu shortcut: %s",
+            "Updated" if existed else "Created",
+            shortcut_path,
+        )
+        return True
     except Exception as e:
         logger.error("Failed to create Start Menu shortcut: %s", e)
         return False

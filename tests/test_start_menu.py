@@ -12,14 +12,31 @@ from talkie_modules.start_menu import create_start_menu_shortcut
 class FakeShortcut:
     """Stand-in for the WScript.Shell shortcut COM object."""
 
-    def __init__(self, target_path: str = "") -> None:
+    def __init__(
+        self,
+        target_path: str = "",
+        working_directory: str = "",
+        icon_location: str = "",
+    ) -> None:
         self.TargetPath = target_path
-        self.WorkingDirectory = ""
-        self.IconLocation = ""
+        self.WorkingDirectory = working_directory
+        self.IconLocation = icon_location
         self.saved = False
+        self.save_error: Exception | None = None
 
     def Save(self) -> None:
+        if self.save_error is not None:
+            raise self.save_error
         self.saved = True
+
+
+def matching_shortcut(exe: str) -> FakeShortcut:
+    """A shortcut already fully consistent with `exe` — the no-op case."""
+    return FakeShortcut(
+        target_path=exe,
+        working_directory=os.path.dirname(exe),
+        icon_location=exe + ",0",
+    )
 
 
 @pytest.fixture
@@ -132,6 +149,36 @@ class TestShortcutCreation:
 
         assert create_start_menu_shortcut() is False
 
+    def test_save_failure_is_swallowed(self, monkeypatch, frozen_exe) -> None:
+        # The realistic Windows failure: no write access to Start Menu\Programs.
+        sc = FakeShortcut()
+        sc.save_error = PermissionError("Access is denied")
+        _install_fake_win32com(monkeypatch, sc)
+
+        assert create_start_menu_shortcut() is False
+
+    def test_dispatches_wscript_shell(self, monkeypatch, frozen_exe) -> None:
+        sc = FakeShortcut()
+        _install_fake_win32com(monkeypatch, sc)
+
+        create_start_menu_shortcut()
+
+        dispatch = sys.modules["win32com.client"].Dispatch
+        dispatch.assert_called_once_with("WScript.Shell")
+
+    def test_creates_programs_dir_when_missing(
+        self, monkeypatch, frozen_exe, tmp_path
+    ) -> None:
+        sc = FakeShortcut()
+        _install_fake_win32com(monkeypatch, sc)
+        programs = (
+            tmp_path / "AppData" / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+        )
+        assert not programs.exists()
+
+        assert create_start_menu_shortcut() is True
+        assert programs.is_dir()
+
 
 class TestStaleShortcutReconciliation:
     def _write_existing_lnk(self, tmp_path) -> str:
@@ -143,15 +190,19 @@ class TestStaleShortcutReconciliation:
         lnk.write_text("")
         return str(lnk)
 
-    def test_existing_shortcut_with_matching_target_is_left_alone(
+    def test_existing_matching_shortcut_is_left_alone(
         self, monkeypatch, frozen_exe, tmp_path
     ) -> None:
-        self._write_existing_lnk(tmp_path)
-        sc = FakeShortcut(target_path=frozen_exe)
-        _install_fake_win32com(monkeypatch, sc)
+        lnk = self._write_existing_lnk(tmp_path)
+        sc = matching_shortcut(frozen_exe)
+        shell = _install_fake_win32com(monkeypatch, sc)
 
         assert create_start_menu_shortcut() is True
         assert not sc.saved
+        # The shortcut must actually have been opened and inspected. Without
+        # this, the pre-fix code — which early-returned on os.path.isfile()
+        # before touching COM at all — would satisfy the assertions above.
+        shell.CreateShortcut.assert_called_once_with(lnk)
 
     def test_stale_target_is_repointed_at_current_exe(
         self, monkeypatch, frozen_exe, tmp_path
@@ -164,3 +215,61 @@ class TestStaleShortcutReconciliation:
         assert sc.saved
         assert sc.TargetPath == frozen_exe
         assert sc.WorkingDirectory == os.path.dirname(frozen_exe)
+
+    def test_stale_icon_is_repaired_even_when_target_matches(
+        self, monkeypatch, frozen_exe, tmp_path
+    ) -> None:
+        self._write_existing_lnk(tmp_path)
+        # Written by a build carrying the os.path.join icon bug.
+        sc = matching_shortcut(frozen_exe)
+        sc.IconLocation = os.path.join(frozen_exe, ",0")
+        _install_fake_win32com(monkeypatch, sc)
+
+        assert create_start_menu_shortcut() is True
+        assert sc.saved
+        assert sc.IconLocation == frozen_exe + ",0"
+
+    def test_stale_working_directory_is_repaired_when_target_matches(
+        self, monkeypatch, frozen_exe, tmp_path
+    ) -> None:
+        self._write_existing_lnk(tmp_path)
+        sc = matching_shortcut(frozen_exe)
+        sc.WorkingDirectory = r"C:\old\location"
+        _install_fake_win32com(monkeypatch, sc)
+
+        assert create_start_menu_shortcut() is True
+        assert sc.saved
+        assert sc.WorkingDirectory == os.path.dirname(frozen_exe)
+
+    @pytest.mark.skipif(
+        sys.platform != "win32",
+        reason="os.path.normcase is a no-op on POSIX; case-folding is Windows-only",
+    )
+    def test_target_comparison_is_case_insensitive(
+        self, monkeypatch, frozen_exe, tmp_path
+    ) -> None:
+        self._write_existing_lnk(tmp_path)
+        # Shell can hand TargetPath back in a different case than we wrote.
+        sc = matching_shortcut(frozen_exe)
+        sc.TargetPath = frozen_exe.upper()
+        sc.IconLocation = (frozen_exe + ",0").upper()
+        _install_fake_win32com(monkeypatch, sc)
+
+        assert create_start_menu_shortcut() is True
+        # Case-only drift is not drift; re-saving on every launch is the bug.
+        assert not sc.saved
+
+    def test_unreadable_shortcut_is_discarded_and_recreated(
+        self, monkeypatch, frozen_exe, tmp_path
+    ) -> None:
+        lnk = self._write_existing_lnk(tmp_path)
+        sc = FakeShortcut()
+        shell = _install_fake_win32com(monkeypatch, sc)
+        # First open fails (corrupt / not really a .lnk), second succeeds.
+        shell.CreateShortcut.side_effect = [OSError("not a shortcut"), sc]
+
+        assert create_start_menu_shortcut() is True
+        assert not os.path.exists(lnk) or sc.saved
+        assert sc.saved
+        assert sc.TargetPath == frozen_exe
+        assert shell.CreateShortcut.call_count == 2

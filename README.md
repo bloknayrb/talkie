@@ -34,6 +34,7 @@ Talkie is a local, Windows-based dictation utility designed to be a lightweight 
 - **Auto-Updates**: Check for new releases, download, and restart in-place — all from the Settings UI.
 - **Dictation History**: Recent transcriptions accessible from the tray icon's "Recent" submenu — copy or re-inject past dictations.
 - **Start on Boot**: Optional Windows startup toggle from the tray menu — runs via the user registry, no admin required.
+- **Start Menu Shortcut**: Auto-created on first launch so Talkie appears in Start Menu search and launchers like Flow Launcher / PowerToys Run.
 - **Local STT**: Download and run whisper.cpp locally for fully offline speech-to-text — no API key needed.
 - **Ollama Integration**: Use locally-hosted LLMs via Ollama for text processing — keeps everything on your machine.
 - **Portable Executable**: Run as a single `.exe` with no installation or admin rights required.

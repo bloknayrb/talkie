@@ -14,3 +14,4 @@ openai>=1.0.0
 anthropic>=0.116.0
 winotify>=1.1.0
 keyring>=25.7.0
+pywin32>=306

@@ -320,9 +320,10 @@ class TalkieApp:
 
         # 0c. Ensure the Start Menu shortcut exists so Talkie is launchable
         # from the Start Menu and launchers that index it (Flow Launcher,
-        # PowerToys Run). No-op in dev mode.
-        from talkie_modules.start_menu import create_start_menu_shortcut
-        create_start_menu_shortcut()
+        # PowerToys Run). Runs on a worker thread so a slow or hung COM call
+        # cannot delay the hotkey listener and tray icon. No-op in dev mode.
+        from talkie_modules.start_menu import create_start_menu_shortcut_async
+        create_start_menu_shortcut_async()
 
         # 1. Start hotkey listener
         self.hotkey_manager = HotkeyManager(
@@ -362,6 +363,14 @@ class TalkieApp:
 
 
 if __name__ == "__main__":
+    # Build-time smoke test: verify the frozen bundle resolves every deferred
+    # import. Handled before the single-instance guard so it can run against an
+    # installed copy while Talkie is up.
+    if "--selftest" in sys.argv:
+        from talkie_modules.selftest import run as run_selftest
+        args = sys.argv[sys.argv.index("--selftest") + 1:]
+        raise SystemExit(run_selftest(args[0] if args else ""))
+
     load_dotenv()
 
     if not _acquire_single_instance():

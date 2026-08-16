@@ -2,11 +2,15 @@
 
 import os
 import sys
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from talkie_modules.start_menu import create_start_menu_shortcut
+from talkie_modules.start_menu import (
+    create_start_menu_shortcut,
+    create_start_menu_shortcut_async,
+)
 
 
 class FakeShortcut:
@@ -52,7 +56,7 @@ def frozen_exe(monkeypatch, tmp_path):
 
 
 def _install_fake_win32com(monkeypatch, shortcut: FakeShortcut) -> MagicMock:
-    """Make `import win32com.client` inside the function resolve to a fake."""
+    """Make the deferred `pythoncom` / `win32com.client` imports resolve to fakes."""
     shell = MagicMock()
     shell.CreateShortcut.return_value = shortcut
     dispatch = MagicMock(return_value=shell)
@@ -64,6 +68,7 @@ def _install_fake_win32com(monkeypatch, shortcut: FakeShortcut) -> MagicMock:
 
     monkeypatch.setitem(sys.modules, "win32com", win32com_mod)
     monkeypatch.setitem(sys.modules, "win32com.client", client_mod)
+    monkeypatch.setitem(sys.modules, "pythoncom", MagicMock())
     return shell
 
 
@@ -133,12 +138,13 @@ class TestShortcutCreation:
         real_import = __import__
 
         def blocked(name, *args, **kwargs):
-            if name.startswith("win32com"):
-                raise ImportError("No module named 'win32com'")
+            if name.startswith("win32com") or name == "pythoncom":
+                raise ImportError(f"No module named {name!r}")
             return real_import(name, *args, **kwargs)
 
         monkeypatch.delitem(sys.modules, "win32com", raising=False)
         monkeypatch.delitem(sys.modules, "win32com.client", raising=False)
+        monkeypatch.delitem(sys.modules, "pythoncom", raising=False)
         with patch("builtins.__import__", side_effect=blocked):
             assert create_start_menu_shortcut() is False
 
@@ -273,3 +279,79 @@ class TestStaleShortcutReconciliation:
         assert sc.saved
         assert sc.TargetPath == frozen_exe
         assert shell.CreateShortcut.call_count == 2
+
+
+class TestComApartment:
+    """COM apartments are per-thread, so the worker thread must initialize its own."""
+
+    def test_com_is_initialized_and_released(self, monkeypatch, frozen_exe) -> None:
+        sc = FakeShortcut()
+        _install_fake_win32com(monkeypatch, sc)
+
+        assert create_start_menu_shortcut() is True
+
+        pythoncom = sys.modules["pythoncom"]
+        pythoncom.CoInitialize.assert_called_once_with()
+        pythoncom.CoUninitialize.assert_called_once_with()
+
+    def test_com_is_released_even_when_save_fails(self, monkeypatch, frozen_exe) -> None:
+        sc = FakeShortcut()
+        sc.save_error = PermissionError("Access is denied")
+        _install_fake_win32com(monkeypatch, sc)
+
+        assert create_start_menu_shortcut() is False
+
+        # Leaking an apartment on the failure path would be invisible until the
+        # next COM user on this thread.
+        sys.modules["pythoncom"].CoUninitialize.assert_called_once_with()
+
+    def test_uninitialize_skipped_when_initialize_rejected(
+        self, monkeypatch, frozen_exe
+    ) -> None:
+        sc = FakeShortcut()
+        _install_fake_win32com(monkeypatch, sc)
+        pythoncom = sys.modules["pythoncom"]
+        # RPC_E_CHANGED_MODE: an apartment already exists under another model.
+        pythoncom.CoInitialize.side_effect = OSError("RPC_E_CHANGED_MODE")
+
+        assert create_start_menu_shortcut() is True
+        # Unbalanced CoUninitialize would tear down someone else's apartment.
+        pythoncom.CoUninitialize.assert_not_called()
+
+
+class TestAsyncLaunch:
+    def test_runs_on_a_daemon_thread_and_completes(
+        self, monkeypatch, frozen_exe
+    ) -> None:
+        sc = FakeShortcut()
+        _install_fake_win32com(monkeypatch, sc)
+
+        thread = create_start_menu_shortcut_async()
+        assert thread.daemon
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+        assert sc.saved
+
+    def test_caller_is_not_blocked_by_a_hung_com_call(
+        self, monkeypatch, frozen_exe
+    ) -> None:
+        release = threading.Event()
+        sc = FakeShortcut()
+        shell = _install_fake_win32com(monkeypatch, sc)
+
+        def hang(_path):
+            release.wait(timeout=10)
+            return sc
+
+        shell.CreateShortcut.side_effect = hang
+
+        try:
+            thread = create_start_menu_shortcut_async()
+            # The point of the worker thread: startup proceeds while COM hangs.
+            assert thread.is_alive()
+            assert not sc.saved
+        finally:
+            release.set()
+            thread.join(timeout=5)
+
+        assert sc.saved
